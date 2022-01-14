@@ -60,12 +60,15 @@ class BaseGuild extends Base {
    * @type {string}
    * @readonly
    */
-  get nameAcronym() {
-    return this.name
+   get nameAcronym() {
+    if (this.name) {
+      return this.name
       .replace(/'s /g, ' ')
       .replace(/\w+/g, e => e[0])
       .replace(/\s/g, '');
-  }
+    } else {
+return ''
+    }
 
   /**
    * Whether this guild is partnered
