@@ -1,8 +1,8 @@
 'use strict';
 
 const process = require('node:process');
+const { ChannelType, MessageType } = require('discord-api-types/v9');
 const Package = (exports.Package = require('../../package.json'));
-const { Error, RangeError, TypeError } = require('../errors');
 
 exports.UserAgent = `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`;
 
@@ -13,75 +13,6 @@ exports.WSCodes = {
   4011: 'SHARDING_REQUIRED',
   4013: 'INVALID_INTENTS',
   4014: 'DISALLOWED_INTENTS',
-};
-
-const AllowedImageFormats = ['webp', 'png', 'jpg', 'jpeg', 'gif'];
-
-const AllowedImageSizes = [16, 32, 56, 64, 96, 128, 256, 300, 512, 600, 1024, 2048, 4096];
-
-function makeImageUrl(root, { format = 'webp', size } = {}) {
-  if (!['undefined', 'number'].includes(typeof size)) throw new TypeError('INVALID_TYPE', 'size', 'number');
-  if (format && !AllowedImageFormats.includes(format)) throw new Error('IMAGE_FORMAT', format);
-  if (size && !AllowedImageSizes.includes(size)) throw new RangeError('IMAGE_SIZE', size);
-  return `${root}.${format}${size ? `?size=${size}` : ''}`;
-}
-
-/**
- * Options for Image URLs.
- * @typedef {StaticImageURLOptions} ImageURLOptions
- * @property {boolean} [dynamic=false] If true, the format will dynamically change to `gif` for animated avatars.
- */
-
-/**
- * Options for static Image URLs.
- * @typedef {Object} StaticImageURLOptions
- * @property {string} [format='webp'] One of `webp`, `png`, `jpg`, `jpeg`.
- * @property {number} [size] One of `16`, `32`, `56`, `64`, `96`, `128`, `256`, `300`, `512`, `600`, `1024`, `2048`,
- * `4096`
- */
-
-// https://discord.com/developers/docs/reference#image-formatting-cdn-endpoints
-exports.Endpoints = {
-  CDN(root) {
-    return {
-      Emoji: (emojiId, format = 'webp') => `${root}/emojis/${emojiId}.${format}`,
-      Asset: name => `${root}/assets/${name}`,
-      DefaultAvatar: discriminator => `${root}/embed/avatars/${discriminator}.png`,
-      Avatar: (userId, hash, format, size, dynamic = false) => {
-        if (dynamic && hash.startsWith('a_')) format = 'gif';
-        return makeImageUrl(`${root}/avatars/${userId}/${hash}`, { format, size });
-      },
-      GuildMemberAvatar: (guildId, memberId, hash, format = 'webp', size, dynamic = false) => {
-        if (dynamic && hash.startsWith('a_')) format = 'gif';
-        return makeImageUrl(`${root}/guilds/${guildId}/users/${memberId}/avatars/${hash}`, { format, size });
-      },
-      Banner: (id, hash, format, size, dynamic = false) => {
-        if (dynamic && hash.startsWith('a_')) format = 'gif';
-        return makeImageUrl(`${root}/banners/${id}/${hash}`, { format, size });
-      },
-      Icon: (guildId, hash, format, size, dynamic = false) => {
-        if (dynamic && hash.startsWith('a_')) format = 'gif';
-        return makeImageUrl(`${root}/icons/${guildId}/${hash}`, { format, size });
-      },
-      AppIcon: (appId, hash, options) => makeImageUrl(`${root}/app-icons/${appId}/${hash}`, options),
-      AppAsset: (appId, hash, options) => makeImageUrl(`${root}/app-assets/${appId}/${hash}`, options),
-      StickerPackBanner: (bannerId, format, size) =>
-        makeImageUrl(`${root}/app-assets/710982414301790216/store/${bannerId}`, { size, format }),
-      GDMIcon: (channelId, hash, format, size) =>
-        makeImageUrl(`${root}/channel-icons/${channelId}/${hash}`, { size, format }),
-      Splash: (guildId, hash, format, size) => makeImageUrl(`${root}/splashes/${guildId}/${hash}`, { size, format }),
-      DiscoverySplash: (guildId, hash, format, size) =>
-        makeImageUrl(`${root}/discovery-splashes/${guildId}/${hash}`, { size, format }),
-      TeamIcon: (teamId, hash, options) => makeImageUrl(`${root}/team-icons/${teamId}/${hash}`, options),
-      Sticker: (stickerId, stickerFormat) =>
-        `${root}/stickers/${stickerId}.${stickerFormat === 'LOTTIE' ? 'json' : 'png'}`,
-      RoleIcon: (roleId, hash, format = 'webp', size) =>
-        makeImageUrl(`${root}/role-icons/${roleId}/${hash}`, { size, format }),
-    };
-  },
-  invite: (root, code, eventId) => (eventId ? `${root}/${code}?event=${eventId}` : `${root}/${code}`),
-  scheduledEvent: (root, guildId, eventId) => `${root}/${guildId}/${eventId}`,
-  botGateway: '/gateway/bot',
 };
 
 /**
@@ -125,10 +56,6 @@ exports.Opcodes = {
 };
 
 exports.Events = {
-  RATE_LIMIT: 'rateLimit',
-  INVALID_REQUEST_WARNING: 'invalidRequestWarning',
-  API_RESPONSE: 'apiResponse',
-  API_REQUEST: 'apiRequest',
   CLIENT_READY: 'ready',
   GUILD_CREATE: 'guildCreate',
   GUILD_DELETE: 'guildDelete',
@@ -368,70 +295,6 @@ exports.InviteScopes = [
 ];
 
 /**
- * The behavior of expiring subscribers for Integrations. This can be:
- * * REMOVE_ROLE
- * * KICK
- * @typedef {string} IntegrationExpireBehavior
- * @see {@link https://discord.com/developers/docs/resources/guild#integration-object-integration-expire-behaviors}
- */
-exports.IntegrationExpireBehaviors = createEnum(['REMOVE_ROLE', 'KICK']);
-
-/**
- * The type of a message, e.g. `DEFAULT`. Here are the available types:
- * * DEFAULT
- * * RECIPIENT_ADD
- * * RECIPIENT_REMOVE
- * * CALL
- * * CHANNEL_NAME_CHANGE
- * * CHANNEL_ICON_CHANGE
- * * CHANNEL_PINNED_MESSAGE
- * * GUILD_MEMBER_JOIN
- * * USER_PREMIUM_GUILD_SUBSCRIPTION
- * * USER_PREMIUM_GUILD_SUBSCRIPTION_TIER_1
- * * USER_PREMIUM_GUILD_SUBSCRIPTION_TIER_2
- * * USER_PREMIUM_GUILD_SUBSCRIPTION_TIER_3
- * * CHANNEL_FOLLOW_ADD
- * * GUILD_DISCOVERY_DISQUALIFIED
- * * GUILD_DISCOVERY_REQUALIFIED
- * * GUILD_DISCOVERY_GRACE_PERIOD_INITIAL_WARNING
- * * GUILD_DISCOVERY_GRACE_PERIOD_FINAL_WARNING
- * * THREAD_CREATED
- * * REPLY
- * * CHAT_INPUT_COMMAND
- * * THREAD_STARTER_MESSAGE
- * * GUILD_INVITE_REMINDER
- * * CONTEXT_MENU_COMMAND
- * @typedef {string} MessageType
- * @see {@link https://discord.com/developers/docs/resources/channel#message-object-message-types}
- */
-exports.MessageTypes = [
-  'DEFAULT',
-  'RECIPIENT_ADD',
-  'RECIPIENT_REMOVE',
-  'CALL',
-  'CHANNEL_NAME_CHANGE',
-  'CHANNEL_ICON_CHANGE',
-  'CHANNEL_PINNED_MESSAGE',
-  'GUILD_MEMBER_JOIN',
-  'USER_PREMIUM_GUILD_SUBSCRIPTION',
-  'USER_PREMIUM_GUILD_SUBSCRIPTION_TIER_1',
-  'USER_PREMIUM_GUILD_SUBSCRIPTION_TIER_2',
-  'USER_PREMIUM_GUILD_SUBSCRIPTION_TIER_3',
-  'CHANNEL_FOLLOW_ADD',
-  null,
-  'GUILD_DISCOVERY_DISQUALIFIED',
-  'GUILD_DISCOVERY_REQUALIFIED',
-  'GUILD_DISCOVERY_GRACE_PERIOD_INITIAL_WARNING',
-  'GUILD_DISCOVERY_GRACE_PERIOD_FINAL_WARNING',
-  'THREAD_CREATED',
-  'REPLY',
-  'CHAT_INPUT_COMMAND',
-  'THREAD_STARTER_MESSAGE',
-  'GUILD_INVITE_REMINDER',
-  'CONTEXT_MENU_COMMAND',
-];
-
-/**
  * The name of an item to be swept in Sweepers
  * * `applicationCommands` - both global and guild commands
  * * `bans`
@@ -467,16 +330,19 @@ exports.SweeperKeys = [
 ];
 
 /**
- * The types of messages that are `System`. The available types are `MessageTypes` excluding:
- * * DEFAULT
- * * REPLY
- * * CHAT_INPUT_COMMAND
- * * CONTEXT_MENU_COMMAND
- * @typedef {string} SystemMessageType
+ * The types of messages that are not `System`. The available types are:
+ * * {@link MessageType.Default}
+ * * {@link MessageType.Reply}
+ * * {@link MessageType.ChatInputCommand}
+ * * {@link MessageType.ContextMenuCommand}
+ * @typedef {MessageType[]} NonSystemMessageTypes
  */
-exports.SystemMessageTypes = exports.MessageTypes.filter(
-  type => type && !['DEFAULT', 'REPLY', 'CHAT_INPUT_COMMAND', 'CONTEXT_MENU_COMMAND'].includes(type),
-);
+exports.NonSystemMessageTypes = [
+  MessageType.Default,
+  MessageType.Reply,
+  MessageType.ChatInputCommand,
+  MessageType.ContextMenuCommand,
+];
 
 /**
  * The channels that are text-based.
@@ -489,39 +355,43 @@ exports.SystemMessageTypes = exports.MessageTypes.filter(
 
 /**
  * The types of channels that are text-based. The available types are:
- * * DM
- * * GUILD_TEXT
- * * GUILD_NEWS
- * * GUILD_NEWS_THREAD
- * * GUILD_PUBLIC_THREAD
- * * GUILD_PRIVATE_THREAD
- * @typedef {string} TextBasedChannelTypes
+ * * {@link ChannelType.DM}
+ * * {@link ChannelType.GuildText}
+ * * {@link ChannelType.GuildNews}
+ * * {@link ChannelType.GuildNewsThread}
+ * * {@link ChannelType.GuildPublicThread}
+ * * {@link ChannelType.GuildPrivateThread}
+ * @typedef {ChannelType} TextBasedChannelTypes
  */
 exports.TextBasedChannelTypes = [
-  'DM',
-  'GUILD_TEXT',
-  'GUILD_NEWS',
-  'GUILD_NEWS_THREAD',
-  'GUILD_PUBLIC_THREAD',
-  'GUILD_PRIVATE_THREAD',
+  ChannelType.DM,
+  ChannelType.GuildText,
+  ChannelType.GuildNews,
+  ChannelType.GuildNewsThread,
+  ChannelType.GuildPublicThread,
+  ChannelType.GuildPrivateThread,
 ];
 
 /**
  * The types of channels that are threads. The available types are:
- * * GUILD_NEWS_THREAD
- * * GUILD_PUBLIC_THREAD
- * * GUILD_PRIVATE_THREAD
- * @typedef {string} ThreadChannelTypes
+ * * {@link ChannelType.GuildNewsThread}
+ * * {@link ChannelType.GuildPublicThread}
+ * * {@link ChannelType.GuildPrivateThread}
+ * @typedef {ChannelType[]} ThreadChannelTypes
  */
-exports.ThreadChannelTypes = ['GUILD_NEWS_THREAD', 'GUILD_PUBLIC_THREAD', 'GUILD_PRIVATE_THREAD'];
+exports.ThreadChannelTypes = [
+  ChannelType.GuildNewsThread,
+  ChannelType.GuildPublicThread,
+  ChannelType.GuildPrivateThread,
+];
 
 /**
  * The types of channels that are voice-based. The available types are:
- * * GUILD_VOICE
- * * GUILD_STAGE_VOICE
- * @typedef {string} VoiceBasedChannelTypes
+ * * {@link ChannelType.GuildVoice}
+ * * {@link ChannelType.GuildStageVoice}
+ * @typedef {ChannelType[]} VoiceBasedChannelTypes
  */
-exports.VoiceBasedChannelTypes = ['GUILD_VOICE', 'GUILD_STAGE_VOICE'];
+exports.VoiceBasedChannelTypes = [ChannelType.GuildVoice, ChannelType.GuildStageVoice];
 
 exports.Colors = {
   DEFAULT: 0x000000,
@@ -562,16 +432,6 @@ function keyMirror(arr) {
   let tmp = Object.create(null);
   for (const value of arr) tmp[value] = value;
   return tmp;
-}
-
-function createEnum(keys) {
-  const obj = {};
-  for (const [index, key] of keys.entries()) {
-    if (key === null) continue;
-    obj[key] = index;
-    obj[index] = key;
-  }
-  return obj;
 }
 
 /**

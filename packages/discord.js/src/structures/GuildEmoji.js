@@ -1,5 +1,6 @@
 'use strict';
 
+const { Routes } = require('discord-api-types/v9');
 const BaseGuildEmoji = require('./BaseGuildEmoji');
 const { Error } = require('../errors');
 const GuildEmojiRoleManager = require('../managers/GuildEmojiRoleManager');
@@ -81,7 +82,7 @@ class GuildEmoji extends BaseGuildEmoji {
         throw new Error('MISSING_MANAGE_EMOJIS_AND_STICKERS_PERMISSION', this.guild);
       }
     }
-    const data = await this.client.api.guilds(this.guild.id).emojis(this.id).get();
+    const data = await this.client.rest.get(Routes.guildEmoji(this.guild.id, this.id));
     this._patch(data);
     return this.author;
   }
@@ -104,21 +105,8 @@ class GuildEmoji extends BaseGuildEmoji {
    *   .then(e => console.log(`Edited emoji ${e}`))
    *   .catch(console.error);
    */
-  async edit(data, reason) {
-    const roles = data.roles?.map(r => r.id ?? r);
-    const newData = await this.client.api
-      .guilds(this.guild.id)
-      .emojis(this.id)
-      .patch({
-        data: {
-          name: data.name,
-          roles,
-        },
-        reason,
-      });
-    const clone = this._clone();
-    clone._patch(newData);
-    return clone;
+  edit(data, reason) {
+    return this.guild.emojis.edit(this.id, data, reason);
   }
 
   /**
@@ -137,7 +125,7 @@ class GuildEmoji extends BaseGuildEmoji {
    * @returns {Promise<GuildEmoji>}
    */
   async delete(reason) {
-    await this.client.api.guilds(this.guild.id).emojis(this.id).delete({ reason });
+    await this.guild.emojis.delete(this.id, reason);
     return this;
   }
 

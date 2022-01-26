@@ -1,6 +1,7 @@
 'use strict';
 
 const { DiscordSnowflake } = require('@sapphire/snowflake');
+const { Routes } = require('discord-api-types/v9');
 const Base = require('./Base');
 
 /**
@@ -90,12 +91,11 @@ return ''
 
   /**
    * The URL to this guild's icon.
-   * @param {ImageURLOptions} [options={}] Options for the Image URL
+   * @param {ImageURLOptions} [options={}] Options for the image URL
    * @returns {?string}
    */
-  iconURL({ format, size, dynamic } = {}) {
-    if (!this.icon) return null;
-    return this.client.rest.cdn.Icon(this.id, this.icon, format, size, dynamic);
+  iconURL(options = {}) {
+    return this.icon && this.client.rest.cdn.icon(this.id, this.icon, options);
   }
 
   /**
@@ -103,7 +103,9 @@ return ''
    * @returns {Promise<Guild>}
    */
   async fetch() {
-    const data = await this.client.api.guilds(this.id).get({ query: { with_counts: true } });
+    const data = await this.client.rest.get(Routes.guild(this.id), {
+      query: new URLSearchParams({ with_counts: true }),
+    });
     return this.client.guilds._add(data);
   }
 

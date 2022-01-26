@@ -1,6 +1,7 @@
 'use strict';
 
 const { Collection } = require('@discordjs/collection');
+const { Routes } = require('discord-api-types/v9');
 const GuildChannel = require('./GuildChannel');
 const Webhook = require('./Webhook');
 const TextBasedChannel = require('./interfaces/TextBasedChannel');
@@ -122,7 +123,7 @@ class BaseGuildTextChannel extends GuildChannel {
    *   .catch(console.error);
    */
   async fetchWebhooks() {
-    const data = await this.client.api.channels[this.id].webhooks.get();
+    const data = await this.client.rest.get(Routes.channelWebhooks(this.id));
     const hooks = new Collection();
     for (const hook of data) hooks.set(hook.id, new Webhook(this.client, hook));
     return hooks;
@@ -153,8 +154,8 @@ class BaseGuildTextChannel extends GuildChannel {
     if (typeof avatar === 'string' && !avatar.startsWith('data:')) {
       avatar = await DataResolver.resolveImage(avatar);
     }
-    const data = await this.client.api.channels[this.id].webhooks.post({
-      data: {
+    const data = await this.client.rest.post(Routes.channelWebhooks(this.id), {
+      body: {
         name,
         avatar,
       },
@@ -187,9 +188,10 @@ class BaseGuildTextChannel extends GuildChannel {
    * @property {number} [maxUses=0] Maximum number of uses
    * @property {boolean} [unique=false] Create a unique invite, or use an existing one with similar settings
    * @property {UserResolvable} [targetUser] The user whose stream to display for this invite,
-   * required if `targetType` is `STREAM`, the user must be streaming in the channel
+   * required if `targetType` is {@link InviteTargetType.Stream}, the user must be streaming in the channel
    * @property {ApplicationResolvable} [targetApplication] The embedded application to open for this invite,
-   * required if `targetType` is `EMBEDDED_APPLICATION`, the application must have the `EMBEDDED` flag
+   * required if `targetType` is {@link InviteTargetType.Stream}, the application must have the
+   * {@link InviteTargetType.EmbeddedApplication} flag
    * @property {InviteTargetType} [targetType] The type of the target for this voice channel invite
    * @property {string} [reason] The reason for creating the invite
    */

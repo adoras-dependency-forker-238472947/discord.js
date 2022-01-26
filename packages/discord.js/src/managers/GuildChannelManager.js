@@ -2,7 +2,7 @@
 
 const process = require('node:process');
 const { Collection } = require('@discordjs/collection');
-const { ChannelType } = require('discord-api-types/v9');
+const { ChannelType, Routes } = require('discord-api-types/v9');
 const CachedManager = require('./CachedManager');
 const ThreadManager = require('./ThreadManager');
 const { Error } = require('../errors');
@@ -113,7 +113,7 @@ class GuildChannelManager extends CachedManager {
    * @example
    * // Create a new channel with permission overwrites
    * guild.channels.create('new-voice', {
-   *   type: 'GUILD_VOICE',
+   *   type: ChannelType.GuildVoice,
    *   permissionOverwrites: [
    *      {
    *        id: message.author.id,
@@ -140,9 +140,8 @@ class GuildChannelManager extends CachedManager {
   ) {
     parent &&= this.client.channels.resolveId(parent);
     permissionOverwrites &&= permissionOverwrites.map(o => PermissionOverwrites.resolve(o, this.guild));
-    const intType = typeof type === 'number' ? type : ChannelType[type] ?? ChannelType.GuildText;
 
-    if (intType === ChannelType.GuildStore && !storeChannelDeprecationEmitted) {
+    if (type === ChannelType.GuildStore && !storeChannelDeprecationEmitted) {
       storeChannelDeprecationEmitted = true;
       process.emitWarning(
         // eslint-disable-next-line max-len
@@ -151,11 +150,11 @@ class GuildChannelManager extends CachedManager {
       );
     }
 
-    const data = await this.client.api.guilds(this.guild.id).channels.post({
-      data: {
+    const data = await this.client.rest.post(Routes.guildChannels(this.guild.id), {
+      body: {
         name,
         topic,
-        type: intType,
+        type,
         nsfw,
         bitrate,
         user_limit: userLimit,
@@ -193,13 +192,13 @@ class GuildChannelManager extends CachedManager {
     }
 
     if (id) {
-      const data = await this.client.api.channels(id).get();
+      const data = await this.client.rest.get(Routes.channel(id));
       // Since this is the guild manager, throw if on a different guild
       if (this.guild.id !== data.guild_id) throw new Error('GUILD_CHANNEL_UNOWNED');
       return this.client.channels._add(data, this.guild, { cache });
     }
 
-    const data = await this.client.api.guilds(this.guild.id).channels.get();
+    const data = await this.client.rest.get(Routes.guildChannels(this.guild.id));
     const channels = new Collection();
     for (const channel of data) channels.set(channel.id, this.client.channels._add(channel, this.guild, { cache }));
     return channels;
@@ -239,7 +238,7 @@ class GuildChannelManager extends CachedManager {
       parent_id: typeof r.parent !== 'undefined' ? this.channels.resolveId(r.parent) : undefined,
     }));
 
-    await this.client.api.guilds(this.guild.id).channels.patch({ data: channelPositions });
+    await this.client.rest.patch(Routes.guildChannels(this.guild.id), { body: channelPositions });
     return this.client.actions.GuildChannelsPositionUpdate.handle({
       guild_id: this.guild.id,
       channels: channelPositions,
@@ -257,7 +256,7 @@ class GuildChannelManager extends CachedManager {
    *   .catch(console.error);
    */
   async fetchActiveThreads(cache = true) {
-    const raw = await this.client.api.guilds(this.guild.id).threads.active.get();
+    const raw = await this.client.rest.get(Routes.guildActiveThreads(this.guild.id));
     return ThreadManager._mapThreads(raw, this.client, { guild: this.guild, cache });
   }
 }
