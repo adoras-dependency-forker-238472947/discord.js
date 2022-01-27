@@ -70,7 +70,7 @@ class BaseGuild extends Base {
     } else {
 return ''
     }
-
+   }
   /**
    * Whether this guild is partnered
    * @type {boolean}
