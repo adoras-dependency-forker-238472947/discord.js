@@ -1,7 +1,8 @@
 'use strict';
 
+const { makeURLSearchParams } = require('@discordjs/rest');
 const { DiscordSnowflake } = require('@sapphire/snowflake');
-const { Routes } = require('discord-api-types/v9');
+const { Routes, GuildFeature } = require('discord-api-types/v10');
 const Base = require('./Base');
 
 /**
@@ -33,7 +34,7 @@ class BaseGuild extends Base {
 
     /**
      * An array of features available to this guild
-     * @type {Features[]}
+     * @type {GuildFeature[]}
      */
     this.features = data.features;
   }
@@ -77,7 +78,7 @@ return ''
    * @readonly
    */
   get partnered() {
-    return this.features.includes('PARTNERED');
+    return this.features.includes(GuildFeature.Partnered);
   }
 
   /**
@@ -86,7 +87,7 @@ return ''
    * @readonly
    */
   get verified() {
-    return this.features.includes('VERIFIED');
+    return this.features.includes(GuildFeature.Verified);
   }
 
   /**
@@ -104,7 +105,7 @@ return ''
    */
   async fetch() {
     const data = await this.client.rest.get(Routes.guild(this.id), {
-      query: new URLSearchParams({ with_counts: true }),
+      query: makeURLSearchParams({ with_counts: true }),
     });
     return this.client.guilds._add(data);
   }

@@ -1,50 +1,68 @@
 import { EventEmitter } from 'node:events';
+import type { Collection } from '@discordjs/collection';
+import type { request, Dispatcher } from 'undici';
 import { CDN } from './CDN';
-import { InternalRequest, RequestData, RequestManager, RequestMethod, RouteLike } from './RequestManager';
-import { DefaultRestOptions, RESTEvents } from './utils/constants';
-import type { AgentOptions } from 'node:https';
-import type { RequestInit, Response } from 'node-fetch';
+import {
+	HandlerRequestData,
+	InternalRequest,
+	RequestData,
+	RequestManager,
+	RequestMethod,
+	RouteLike,
+} from './RequestManager';
 import type { HashData } from './RequestManager';
-import type Collection from '@discordjs/collection';
 import type { IHandler } from './handlers/IHandler';
+import { DefaultRestOptions, RESTEvents } from './utils/constants';
+import { parseResponse } from './utils/utils';
 
 /**
  * Options to be passed when creating the REST instance
  */
 export interface RESTOptions {
 	/**
-	 * HTTPS Agent options
-	 * @default {}
+	 * The agent to set globally
 	 */
-	agent: Omit<AgentOptions, 'keepAlive'>;
+	agent: Dispatcher;
 	/**
 	 * The base api path, without version
 	 * @default 'https://discord.com/api'
 	 */
 	api: string;
 	/**
+	 * The authorization prefix to use for requests, useful if you want to use
+	 * bearer tokens
+	 *
+	 * @default 'Bot'
+	 */
+	authPrefix: 'Bot' | 'Bearer';
+	/**
 	 * The cdn path
+	 *
 	 * @default 'https://cdn.discordapp.com'
 	 */
 	cdn: string;
 	/**
 	 * Additional headers to send for all API requests
+	 *
 	 * @default {}
 	 */
 	headers: Record<string, string>;
 	/**
 	 * The number of invalid REST requests (those that return 401, 403, or 429) in a 10 minute window between emitted warnings (0 for no warnings).
 	 * That is, if set to 500, warnings will be emitted at invalid request number 500, 1000, 1500, and so on.
+	 *
 	 * @default 0
 	 */
 	invalidRequestWarningInterval: number;
 	/**
 	 * How many requests to allow sending per second (Infinity for unlimited, 50 for the standard global limit used by Discord)
+	 *
 	 * @default 50
 	 */
 	globalRequestsPerSecond: number;
 	/**
 	 * The extra offset to add to rate limits in milliseconds
+	 *
 	 * @default 50
 	 */
 	offset: number;
@@ -53,42 +71,50 @@ export interface RESTOptions {
 	 * When an array of strings, each element is treated as a prefix for the request route
 	 * (e.g. `/channels` to match any route starting with `/channels` such as `/channels/:id/messages`)
 	 * for which to throw {@link RateLimitError}s. All other request routes will be queued normally
+	 *
 	 * @default null
 	 */
 	rejectOnRateLimit: string[] | RateLimitQueueFilter | null;
 	/**
 	 * The number of retries for errors with the 500 code, or errors
 	 * that timeout
+	 *
 	 * @default 3
 	 */
 	retries: number;
 	/**
 	 * The time to wait in milliseconds before a request is aborted
+	 *
 	 * @default 15_000
 	 */
 	timeout: number;
 	/**
 	 * Extra information to add to the user agent
+	 *
 	 * @default `Node.js ${process.version}`
 	 */
 	userAgentAppendix: string;
 	/**
 	 * The version of the API to use
-	 * @default '9'
+	 *
+	 * @default '10'
 	 */
 	version: string;
 	/**
 	 * The amount of time in milliseconds that passes between each hash sweep. (defaults to 4h)
+	 *
 	 * @default 14_400_000
 	 */
 	hashSweepInterval: number;
 	/**
 	 * The maximum amount of time a hash can exist in milliseconds without being hit with a request (defaults to 24h)
+	 *
 	 * @default 86_400_000
 	 */
 	hashLifetime: number;
 	/**
 	 * The amount of time in milliseconds that passes between each hash sweep. (defaults to 1h)
+	 *
 	 * @default 3_600_000
 	 */
 	handlerSweepInterval: number;
@@ -156,11 +182,11 @@ export interface APIRequest {
 	/**
 	 * Additional HTTP options for this request
 	 */
-	options: RequestInit;
+	options: RequestOptions;
 	/**
 	 * The data that was used to form the body of this request
 	 */
-	data: Pick<InternalRequest, 'files' | 'body'>;
+	data: HandlerRequestData;
 	/**
 	 * The number of times this request has been attempted
 	 */
@@ -182,8 +208,7 @@ export interface RestEvents {
 	invalidRequestWarning: [invalidRequestInfo: InvalidRequestWarningData];
 	restDebug: [info: string];
 	rateLimited: [rateLimitInfo: RateLimitData];
-	request: [request: APIRequest];
-	response: [request: APIRequest, response: Response];
+	response: [request: APIRequest, response: Dispatcher.ResponseData];
 	newListener: [name: string, listener: (...args: any) => void];
 	removeListener: [name: string, listener: (...args: any) => void];
 	hashSweep: [sweptHashes: Collection<string, HashData>];
@@ -207,6 +232,8 @@ export interface REST {
 		(<S extends string | symbol>(event?: Exclude<S, keyof RestEvents>) => this);
 }
 
+export type RequestOptions = Exclude<Parameters<typeof request>[1], undefined>;
+
 export class REST extends EventEmitter {
 	public readonly cdn: CDN;
 	public readonly requestManager: RequestManager;
@@ -221,16 +248,34 @@ export class REST extends EventEmitter {
 			.on(RESTEvents.HashSweep, this.emit.bind(this, RESTEvents.HashSweep));
 
 		this.on('newListener', (name, listener) => {
-			if (name === RESTEvents.Request || name === RESTEvents.Response) this.requestManager.on(name, listener);
+			if (name === RESTEvents.Response) this.requestManager.on(name, listener);
 		});
 		this.on('removeListener', (name, listener) => {
-			if (name === RESTEvents.Request || name === RESTEvents.Response) this.requestManager.off(name, listener);
+			if (name === RESTEvents.Response) this.requestManager.off(name, listener);
 		});
 	}
 
 	/**
+	 * Gets the agent set for this instance
+	 */
+	public getAgent() {
+		return this.requestManager.agent;
+	}
+
+	/**
+	 * Sets the default agent to use for requests performed by this instance
+	 *
+	 * @param agent - Sets the agent to use
+	 */
+	public setAgent(agent: Dispatcher) {
+		this.requestManager.setAgent(agent);
+		return this;
+	}
+
+	/**
 	 * Sets the authorization token that should be used for requests
-	 * @param token The authorization token to use
+	 *
+	 * @param token - The authorization token to use
 	 */
 	public setToken(token: string) {
 		this.requestManager.setToken(token);
@@ -239,8 +284,9 @@ export class REST extends EventEmitter {
 
 	/**
 	 * Runs a get request from the api
-	 * @param fullRoute The full route to query
-	 * @param options Optional request options
+	 *
+	 * @param fullRoute - The full route to query
+	 * @param options - Optional request options
 	 */
 	public get(fullRoute: RouteLike, options: RequestData = {}) {
 		return this.request({ ...options, fullRoute, method: RequestMethod.Get });
@@ -248,8 +294,9 @@ export class REST extends EventEmitter {
 
 	/**
 	 * Runs a delete request from the api
-	 * @param fullRoute The full route to query
-	 * @param options Optional request options
+	 *
+	 * @param fullRoute - The full route to query
+	 * @param options - Optional request options
 	 */
 	public delete(fullRoute: RouteLike, options: RequestData = {}) {
 		return this.request({ ...options, fullRoute, method: RequestMethod.Delete });
@@ -257,8 +304,9 @@ export class REST extends EventEmitter {
 
 	/**
 	 * Runs a post request from the api
-	 * @param fullRoute The full route to query
-	 * @param options Optional request options
+	 *
+	 * @param fullRoute - The full route to query
+	 * @param options - Optional request options
 	 */
 	public post(fullRoute: RouteLike, options: RequestData = {}) {
 		return this.request({ ...options, fullRoute, method: RequestMethod.Post });
@@ -266,8 +314,9 @@ export class REST extends EventEmitter {
 
 	/**
 	 * Runs a put request from the api
-	 * @param fullRoute The full route to query
-	 * @param options Optional request options
+	 *
+	 * @param fullRoute - The full route to query
+	 * @param options - Optional request options
 	 */
 	public put(fullRoute: RouteLike, options: RequestData = {}) {
 		return this.request({ ...options, fullRoute, method: RequestMethod.Put });
@@ -275,8 +324,9 @@ export class REST extends EventEmitter {
 
 	/**
 	 * Runs a patch request from the api
-	 * @param fullRoute The full route to query
-	 * @param options Optional request options
+	 *
+	 * @param fullRoute - The full route to query
+	 * @param options - Optional request options
 	 */
 	public patch(fullRoute: RouteLike, options: RequestData = {}) {
 		return this.request({ ...options, fullRoute, method: RequestMethod.Patch });
@@ -284,9 +334,20 @@ export class REST extends EventEmitter {
 
 	/**
 	 * Runs a request from the api
-	 * @param options Request options
+	 *
+	 * @param options - Request options
 	 */
-	public request(options: InternalRequest) {
+	public async request(options: InternalRequest) {
+		const response = await this.raw(options);
+		return parseResponse(response);
+	}
+
+	/**
+	 * Runs a request from the API, yielding the raw Response object
+	 *
+	 * @param options - Request options
+	 */
+	public raw(options: InternalRequest) {
 		return this.requestManager.queueRequest(options);
 	}
 }

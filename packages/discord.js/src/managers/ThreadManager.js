@@ -1,9 +1,10 @@
 'use strict';
 
 const { Collection } = require('@discordjs/collection');
-const { ChannelType, Routes } = require('discord-api-types/v9');
+const { makeURLSearchParams } = require('@discordjs/rest');
+const { ChannelType, Routes } = require('discord-api-types/v10');
 const CachedManager = require('./CachedManager');
-const { TypeError } = require('../errors');
+const { TypeError, ErrorCodes } = require('../errors');
 const ThreadChannel = require('../structures/ThreadChannel');
 
 /**
@@ -64,13 +65,13 @@ class ThreadManager extends CachedManager {
    * @typedef {StartThreadOptions} ThreadCreateOptions
    * @property {MessageResolvable} [startMessage] The message to start a thread from. <warn>If this is defined then type
    * of thread gets automatically defined and cannot be changed. The provided `type` field will be ignored</warn>
-   * @property {ThreadChannelTypes|number} [type] The type of thread to create.
+   * @property {ChannelType.GuildNewsThread|ChannelType.GuildPublicThread|ChannelType.GuildPrivateThread} [type]
+   * The type of thread to create.
    * Defaults to {@link ChannelType.GuildPublicThread} if created in a {@link TextChannel}
    * <warn>When creating threads in a {@link NewsChannel} this is ignored and is always
    * {@link ChannelType.GuildNewsThread}</warn>
    * @property {boolean} [invitable] Whether non-moderators can add other non-moderators to the thread
    * <info>Can only be set when type will be {@link ChannelType.GuildPrivateThread}</info>
-   * @property {number} [rateLimitPerUser] The rate limit per user (slowmode) for the new channel in seconds
    */
 
   /**
@@ -82,7 +83,7 @@ class ThreadManager extends CachedManager {
    * channel.threads
    *   .create({
    *     name: 'food-talk',
-   *     autoArchiveDuration: 60,
+   *     autoArchiveDuration: ThreadAutoArchiveDuration.OneHour,
    *     reason: 'Needed a separate thread for food',
    *   })
    *   .then(threadChannel => console.log(threadChannel))
@@ -92,7 +93,7 @@ class ThreadManager extends CachedManager {
    * channel.threads
    *   .create({
    *      name: 'mod-talk',
-   *      autoArchiveDuration: 60,
+   *      autoArchiveDuration: ThreadAutoArchiveDuration.OneHour,
    *      type: ChannelType.GuildPrivateThread,
    *      reason: 'Needed a separate thread for moderation',
    *    })
@@ -109,24 +110,16 @@ class ThreadManager extends CachedManager {
     rateLimitPerUser,
   } = {}) {
     if (type && typeof type !== 'string' && typeof type !== 'number') {
-      throw new TypeError('INVALID_TYPE', 'type', 'ThreadChannelType or Number');
+      throw new TypeError(ErrorCodes.InvalidType, 'type', 'ThreadChannelType or Number');
     }
     let resolvedType =
       this.channel.type === ChannelType.GuildNews ? ChannelType.GuildNewsThread : ChannelType.GuildPublicThread;
     let startMessageId;
     if (startMessage) {
       startMessageId = this.channel.messages.resolveId(startMessage);
-      if (!startMessageId) throw new TypeError('INVALID_TYPE', 'startMessage', 'MessageResolvable');
+      if (!startMessageId) throw new TypeError(ErrorCodes.InvalidType, 'startMessage', 'MessageResolvable');
     } else if (this.channel.type !== ChannelType.GuildNews) {
       resolvedType = type ?? resolvedType;
-    }
-    if (autoArchiveDuration === 'MAX') {
-      autoArchiveDuration = 1440;
-      if (this.channel.guild.features.includes('SEVEN_DAY_THREAD_ARCHIVE')) {
-        autoArchiveDuration = 10080;
-      } else if (this.channel.guild.features.includes('THREE_DAY_THREAD_ARCHIVE')) {
-        autoArchiveDuration = 4320;
-      }
     }
 
     const data = await this.client.rest.post(Routes.threads(this.channel.id, startMessageId), {
@@ -212,7 +205,7 @@ class ThreadManager extends CachedManager {
     }
     let timestamp;
     let id;
-    const query = new URLSearchParams();
+    const query = makeURLSearchParams({ limit });
     if (typeof before !== 'undefined') {
       if (before instanceof ThreadChannel || /^\d{16,19}$/.test(String(before))) {
         id = this.resolveId(before);
@@ -228,14 +221,11 @@ class ThreadManager extends CachedManager {
             query.set('before', timestamp);
           }
         } catch {
-          throw new TypeError('INVALID_TYPE', 'before', 'DateResolvable or ThreadChannelResolvable');
+          throw new TypeError(ErrorCodes.InvalidType, 'before', 'DateResolvable or ThreadChannelResolvable');
         }
       }
     }
 
-    if (limit) {
-      query.set('limit', limit);
-    }
     const raw = await this.client.rest.get(path, { query });
     return this.constructor._mapThreads(raw, this.client, { parent: this.channel, cache });
   }

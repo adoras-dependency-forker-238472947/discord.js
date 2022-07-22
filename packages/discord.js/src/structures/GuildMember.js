@@ -1,11 +1,12 @@
 'use strict';
 
+const { PermissionFlagsBits } = require('discord-api-types/v10');
 const Base = require('./Base');
 const VoiceState = require('./VoiceState');
 const TextBasedChannel = require('./interfaces/TextBasedChannel');
-const { Error } = require('../errors');
+const { Error, ErrorCodes } = require('../errors');
 const GuildMemberRoleManager = require('../managers/GuildMemberRoleManager');
-const Permissions = require('../util/Permissions');
+const PermissionsBitField = require('../util/PermissionsBitField');
 
 /**
  * Represents a member of a guild on Discord.
@@ -42,9 +43,9 @@ class GuildMember extends Base {
 
     /**
      * Whether this member has yet to pass the guild's membership gate
-     * @type {boolean}
+     * @type {?boolean}
      */
-    this.pending = false;
+    this.pending = null;
 
     /**
      * The timestamp this member's timeout will be removed
@@ -80,7 +81,13 @@ class GuildMember extends Base {
       this.premiumSinceTimestamp = data.premium_since ? Date.parse(data.premium_since) : null;
     }
     if ('roles' in data) this._roles = data.roles;
-    this.pending = data.pending ?? false;
+
+    if ('pending' in data) {
+      this.pending = data.pending;
+    } else if (!this.partial) {
+      // See https://github.com/discordjs/discord.js/issues/6546 for more info.
+      this.pending ??= false;
+    }
 
     if ('communication_disabled_until' in data) {
       this.communicationDisabledUntilTimestamp =
@@ -214,12 +221,12 @@ class GuildMember extends Base {
 
   /**
    * The overall set of permissions for this member, taking only roles and owner status into account
-   * @type {Readonly<Permissions>}
+   * @type {Readonly<PermissionsBitField>}
    * @readonly
    */
   get permissions() {
-    if (this.user.id === this.guild.ownerId) return new Permissions(Permissions.ALL).freeze();
-    return new Permissions(this.roles.cache.map(role => role.permissions)).freeze();
+    if (this.user.id === this.guild.ownerId) return new PermissionsBitField(PermissionsBitField.All).freeze();
+    return new PermissionsBitField(this.roles.cache.map(role => role.permissions)).freeze();
   }
 
   /**
@@ -232,8 +239,8 @@ class GuildMember extends Base {
     if (this.user.id === this.guild.ownerId) return false;
     if (this.user.id === this.client.user.id) return false;
     if (this.client.user.id === this.guild.ownerId) return true;
-    if (!this.guild.me) throw new Error('GUILD_UNCACHED_ME');
-    return this.guild.me.roles.highest.comparePositionTo(this.roles.highest) > 0;
+    if (!this.guild.members.me) throw new Error(ErrorCodes.GuildUncachedMe);
+    return this.guild.members.me.roles.highest.comparePositionTo(this.roles.highest) > 0;
   }
 
   /**
@@ -242,8 +249,8 @@ class GuildMember extends Base {
    * @readonly
    */
   get kickable() {
-    if (!this.guild.me) throw new Error('GUILD_UNCACHED_ME');
-    return this.manageable && this.guild.me.permissions.has(Permissions.FLAGS.KICK_MEMBERS);
+    if (!this.guild.members.me) throw new Error(ErrorCodes.GuildUncachedMe);
+    return this.manageable && this.guild.members.me.permissions.has(PermissionFlagsBits.KickMembers);
   }
 
   /**
@@ -252,8 +259,8 @@ class GuildMember extends Base {
    * @readonly
    */
   get bannable() {
-    if (!this.guild.me) throw new Error('GUILD_UNCACHED_ME');
-    return this.manageable && this.guild.me.permissions.has(Permissions.FLAGS.BAN_MEMBERS);
+    if (!this.guild.members.me) throw new Error(ErrorCodes.GuildUncachedMe);
+    return this.manageable && this.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers);
   }
 
   /**
@@ -262,7 +269,11 @@ class GuildMember extends Base {
    * @readonly
    */
   get moderatable() {
-    return this.manageable && (this.guild.me?.permissions.has(Permissions.FLAGS.MODERATE_MEMBERS) ?? false);
+    return (
+      !this.permissions.has(PermissionFlagsBits.Administrator) &&
+      this.manageable &&
+      (this.guild.members.me?.permissions.has(PermissionFlagsBits.ModerateMembers) ?? false)
+    );
   }
 
   /**
@@ -277,22 +288,21 @@ class GuildMember extends Base {
    * Returns `channel.permissionsFor(guildMember)`. Returns permissions for a member in a guild channel,
    * taking into account roles and permission overwrites.
    * @param {GuildChannelResolvable} channel The guild channel to use as context
-   * @returns {Readonly<Permissions>}
+   * @returns {Readonly<PermissionsBitField>}
    */
   permissionsIn(channel) {
     channel = this.guild.channels.resolve(channel);
-    if (!channel) throw new Error('GUILD_CHANNEL_RESOLVE');
+    if (!channel) throw new Error(ErrorCodes.GuildChannelResolve);
     return channel.permissionsFor(this);
   }
 
   /**
    * Edits this member.
    * @param {GuildMemberEditData} data The data to edit the member with
-   * @param {string} [reason] Reason for editing this user
    * @returns {Promise<GuildMember>}
    */
-  edit(data, reason) {
-    return this.guild.members.edit(this, data, reason);
+  edit(data) {
+    return this.guild.members.edit(this, data);
   }
 
   /**
@@ -302,7 +312,7 @@ class GuildMember extends Base {
    * @returns {Promise<GuildMember>}
    */
   setNickname(nick, reason) {
-    return this.edit({ nick }, reason);
+    return this.edit({ nick, reason });
   }
 
   /**
@@ -337,7 +347,7 @@ class GuildMember extends Base {
    * @returns {Promise<GuildMember>}
    * @example
    * // ban a guild member
-   * guildMember.ban({ days: 7, reason: 'They deserved it' })
+   * guildMember.ban({ deleteMessageDays: 7, reason: 'They deserved it' })
    *   .then(console.log)
    *   .catch(console.error);
    */
@@ -358,7 +368,7 @@ class GuildMember extends Base {
    *   .catch(console.error);
    */
   disableCommunicationUntil(communicationDisabledUntil, reason) {
-    return this.edit({ communicationDisabledUntil }, reason);
+    return this.edit({ communicationDisabledUntil, reason });
   }
 
   /**
@@ -417,7 +427,7 @@ class GuildMember extends Base {
    * console.log(`Hello from ${member}!`);
    */
   toString() {
-    return `<@${this.nickname ? '!' : ''}${this.user.id}>`;
+    return this.user.toString();
   }
 
   toJSON() {

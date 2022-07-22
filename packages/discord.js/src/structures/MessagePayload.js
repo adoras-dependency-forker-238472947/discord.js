@@ -1,11 +1,15 @@
 'use strict';
 
 const { Buffer } = require('node:buffer');
-const { createComponent, Embed } = require('@discordjs/builders');
-const { MessageFlags } = require('discord-api-types/v9');
-const { RangeError } = require('../errors');
+const { isJSONEncodable } = require('@discordjs/builders');
+const { MessageFlags } = require('discord-api-types/v10');
+const ActionRowBuilder = require('./ActionRowBuilder');
+const { RangeError, ErrorCodes } = require('../errors');
 const DataResolver = require('../util/DataResolver');
-const Util = require('../util/Util');
+const MessageFlagsBitField = require('../util/MessageFlagsBitField');
+const { basename, verifyString, lazy } = require('../util/Util');
+
+const getBaseInteraction = lazy(() => require('./BaseInteraction'));
 
 /**
  * Represents a message to be sent to the API.
@@ -84,14 +88,14 @@ class MessagePayload {
   }
 
   /**
-   * Whether or not the target is an {@link Interaction} or an {@link InteractionWebhook}
+   * Whether or not the target is an {@link BaseInteraction} or an {@link InteractionWebhook}
    * @type {boolean}
    * @readonly
    */
   get isInteraction() {
-    const Interaction = require('./Interaction');
+    const BaseInteraction = getBaseInteraction();
     const InteractionWebhook = require('./InteractionWebhook');
-    return this.target instanceof Interaction || this.target instanceof InteractionWebhook;
+    return this.target instanceof BaseInteraction || this.target instanceof InteractionWebhook;
   }
 
   /**
@@ -103,7 +107,7 @@ class MessagePayload {
     if (this.options.content === null) {
       content = '';
     } else if (typeof this.options.content !== 'undefined') {
-      content = Util.verifyString(this.options.content, RangeError, 'MESSAGE_CONTENT_TYPE', false);
+      content = verifyString(this.options.content, RangeError, ErrorCodes.MessageContentType, true);
     }
 
     return content;
@@ -114,7 +118,7 @@ class MessagePayload {
    * @returns {MessagePayload}
    */
   resolveBody() {
-    if (this.data) return this;
+    if (this.body) return this;
     const isInteraction = this.isInteraction;
     const isWebhook = this.isWebhook;
 
@@ -126,11 +130,11 @@ class MessagePayload {
       nonce = this.options.nonce;
       // eslint-disable-next-line max-len
       if (typeof nonce === 'number' ? !Number.isInteger(nonce) : typeof nonce !== 'string') {
-        throw new RangeError('MESSAGE_NONCE_TYPE');
+        throw new RangeError(ErrorCodes.MessageNonceType);
       }
     }
 
-    const components = this.options.components?.map(c => createComponent(c).toJSON());
+    const components = this.options.components?.map(c => (isJSONEncodable(c) ? c : new ActionRowBuilder(c)).toJSON());
 
     let username;
     let avatarURL;
@@ -140,9 +144,16 @@ class MessagePayload {
     }
 
     let flags;
-    if (typeof this.options.flags !== 'undefined' || this.isMessage || this.isMessageManager) {
-      // eslint-disable-next-line eqeqeq
-      flags = this.options.flags != null ? new MessageFlags(this.options.flags).bitfield : this.target.flags?.bitfield;
+    if (
+      typeof this.options.flags !== 'undefined' ||
+      (this.isMessage && typeof this.options.reply === 'undefined') ||
+      this.isMessageManager
+    ) {
+      flags =
+        // eslint-disable-next-line eqeqeq
+        this.options.flags != null
+          ? new MessageFlagsBitField(this.options.flags).bitfield
+          : this.target.flags?.bitfield;
     }
 
     if (isInteraction && this.options.ephemeral) {
@@ -154,9 +165,8 @@ class MessagePayload {
         ? this.target.client.options.allowedMentions
         : this.options.allowedMentions;
 
-    if (allowedMentions) {
-      allowedMentions = Util.cloneObject(allowedMentions);
-      allowedMentions.replied_user = allowedMentions.repliedUser;
+    if (typeof allowedMentions?.repliedUser !== 'undefined') {
+      allowedMentions = { ...allowedMentions, replied_user: allowedMentions.repliedUser };
       delete allowedMentions.repliedUser;
     }
 
@@ -186,7 +196,9 @@ class MessagePayload {
       content,
       tts,
       nonce,
-      embeds: this.options.embeds?.map(embed => (embed instanceof Embed ? embed : new Embed(embed)).toJSON()),
+      embeds: this.options.embeds?.map(embed =>
+        isJSONEncodable(embed) ? embed.toJSON() : this.target.client.options.jsonTransformer(embed),
+      ),
       components,
       username,
       avatar_url: avatarURL,
@@ -213,20 +225,21 @@ class MessagePayload {
 
   /**
    * Resolves a single file into an object sendable to the API.
-   * @param {BufferResolvable|Stream|FileOptions|MessageAttachment} fileLike Something that could be resolved to a file
+   * @param {BufferResolvable|Stream|JSONEncodable<AttachmentPayload>} fileLike Something that could
+   * be resolved to a file
    * @returns {Promise<RawFile>}
    */
   static async resolveFile(fileLike) {
     let attachment;
-    let fileName;
+    let name;
 
     const findName = thing => {
       if (typeof thing === 'string') {
-        return Util.basename(thing);
+        return basename(thing);
       }
 
       if (thing.path) {
-        return Util.basename(thing.path);
+        return basename(thing.path);
       }
 
       return 'file.jpg';
@@ -236,14 +249,14 @@ class MessagePayload {
       typeof fileLike === 'string' || fileLike instanceof Buffer || typeof fileLike.pipe === 'function';
     if (ownAttachment) {
       attachment = fileLike;
-      fileName = findName(attachment);
+      name = findName(attachment);
     } else {
       attachment = fileLike.attachment;
-      fileName = fileLike.name ?? findName(attachment);
+      name = fileLike.name ?? findName(attachment);
     }
 
-    const fileData = await DataResolver.resolveFile(attachment);
-    return { fileData, fileName };
+    const { data, contentType } = await DataResolver.resolveFile(attachment);
+    return { data, name, contentType };
   }
 
   /**
@@ -265,7 +278,7 @@ module.exports = MessagePayload;
 
 /**
  * A target for a message.
- * @typedef {TextChannel|DMChannel|User|GuildMember|Webhook|WebhookClient|Interaction|InteractionWebhook|
+ * @typedef {TextBasedChannels|User|GuildMember|Webhook|WebhookClient|BaseInteraction|InteractionWebhook|
  * Message|MessageManager} MessageTarget
  */
 

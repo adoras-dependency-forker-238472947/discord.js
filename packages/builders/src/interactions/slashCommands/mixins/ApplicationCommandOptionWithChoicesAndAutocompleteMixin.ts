@@ -1,11 +1,15 @@
-import { APIApplicationCommandOptionChoice, ApplicationCommandOptionType } from 'discord-api-types/v9';
-import { z } from 'zod';
-import { validateMaxChoicesLength } from '../Assertions';
+import { s } from '@sapphire/shapeshift';
+import { APIApplicationCommandOptionChoice, ApplicationCommandOptionType } from 'discord-api-types/v10';
+import { localizationMapPredicate, validateChoicesLength } from '../Assertions';
 
-const stringPredicate = z.string().min(1).max(100);
-const numberPredicate = z.number().gt(-Infinity).lt(Infinity);
-const choicesPredicate = z.tuple([stringPredicate, z.union([stringPredicate, numberPredicate])]).array();
-const booleanPredicate = z.boolean();
+const stringPredicate = s.string.lengthGreaterThanOrEqual(1).lengthLessThanOrEqual(100);
+const numberPredicate = s.number.greaterThan(-Infinity).lessThan(Infinity);
+const choicesPredicate = s.object({
+	name: stringPredicate,
+	name_localizations: localizationMapPredicate,
+	value: s.union(stringPredicate, numberPredicate),
+}).array;
+const booleanPredicate = s.boolean;
 
 export class ApplicationCommandOptionWithChoicesAndAutocompleteMixin<T extends string | number> {
 	public readonly choices?: APIApplicationCommandOptionChoice<T>[];
@@ -15,58 +19,38 @@ export class ApplicationCommandOptionWithChoicesAndAutocompleteMixin<T extends s
 	public readonly type!: ApplicationCommandOptionType;
 
 	/**
-	 * Adds a choice for this option
-	 *
-	 * @param name The name of the choice
-	 * @param value The value of the choice
-	 */
-	public addChoice(name: string, value: T): Omit<this, 'setAutocomplete'> {
-		if (this.autocomplete) {
-			throw new RangeError('Autocomplete and choices are mutually exclusive to each other.');
-		}
-
-		if (this.choices === undefined) {
-			Reflect.set(this, 'choices', []);
-		}
-
-		validateMaxChoicesLength(this.choices!);
-
-		// Validate name
-		stringPredicate.parse(name);
-
-		// Validate the value
-		if (this.type === ApplicationCommandOptionType.String) {
-			stringPredicate.parse(value);
-		} else {
-			numberPredicate.parse(value);
-		}
-
-		this.choices!.push({ name, value });
-
-		return this;
-	}
-
-	/**
 	 * Adds multiple choices for this option
 	 *
-	 * @param choices The choices to add
+	 * @param choices - The choices to add
 	 */
-	public addChoices(choices: [name: string, value: T][]): Omit<this, 'setAutocomplete'> {
-		if (this.autocomplete) {
+	public addChoices(...choices: APIApplicationCommandOptionChoice<T>[]): this {
+		if (choices.length > 0 && this.autocomplete) {
 			throw new RangeError('Autocomplete and choices are mutually exclusive to each other.');
 		}
 
 		choicesPredicate.parse(choices);
 
-		for (const [label, value] of choices) this.addChoice(label, value);
+		if (this.choices === undefined) {
+			Reflect.set(this, 'choices', []);
+		}
+
+		validateChoicesLength(choices.length, this.choices);
+
+		for (const { name, name_localizations, value } of choices) {
+			// Validate the value
+			if (this.type === ApplicationCommandOptionType.String) {
+				stringPredicate.parse(value);
+			} else {
+				numberPredicate.parse(value);
+			}
+
+			this.choices!.push({ name, name_localizations, value });
+		}
+
 		return this;
 	}
 
-	public setChoices<Input extends [name: string, value: T][]>(
-		choices: Input,
-	): Input extends []
-		? this & Pick<ApplicationCommandOptionWithChoicesAndAutocompleteMixin<T>, 'setAutocomplete'>
-		: Omit<this, 'setAutocomplete'> {
+	public setChoices<Input extends APIApplicationCommandOptionChoice<T>[]>(...choices: Input): this {
 		if (choices.length > 0 && this.autocomplete) {
 			throw new RangeError('Autocomplete and choices are mutually exclusive to each other.');
 		}
@@ -74,20 +58,16 @@ export class ApplicationCommandOptionWithChoicesAndAutocompleteMixin<T extends s
 		choicesPredicate.parse(choices);
 
 		Reflect.set(this, 'choices', []);
-		for (const [label, value] of choices) this.addChoice(label, value);
+		this.addChoices(...choices);
 
 		return this;
 	}
 
 	/**
 	 * Marks the option as autocompletable
-	 * @param autocomplete If this option should be autocompletable
+	 * @param autocomplete - If this option should be autocompletable
 	 */
-	public setAutocomplete<U extends boolean>(
-		autocomplete: U,
-	): U extends true
-		? Omit<this, 'addChoice' | 'addChoices'>
-		: this & Pick<ApplicationCommandOptionWithChoicesAndAutocompleteMixin<T>, 'addChoice' | 'addChoices'> {
+	public setAutocomplete(autocomplete: boolean): this {
 		// Assert that you actually passed a boolean
 		booleanPredicate.parse(autocomplete);
 

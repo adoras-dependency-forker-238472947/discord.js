@@ -1,16 +1,24 @@
 'use strict';
 
 const { setTimeout, clearTimeout } = require('node:timers');
-const { RouteBases, Routes } = require('discord-api-types/v9');
+const { RouteBases, Routes } = require('discord-api-types/v10');
 const Base = require('./Base');
-const { Events } = require('../util/Constants');
 const DataResolver = require('../util/DataResolver');
+const Events = require('../util/Events');
 
 /**
  * Represents the template for a guild.
  * @extends {Base}
  */
 class GuildTemplate extends Base {
+  /**
+   * A regular expression that globally matches guild template links.
+   * The `code` group property is present on the `exec()` result of this expression.
+   * @type {RegExp}
+   * @memberof GuildTemplate
+   */
+  static GuildTemplatesPattern = /discord(?:app)?\.(?:com\/template|new)\/(?<code>[\w-]{2,255})/i;
+
   constructor(client, data) {
     super(client);
     this._patch(data);
@@ -126,7 +134,7 @@ class GuildTemplate extends Base {
 
     return new Promise(resolve => {
       const resolveGuild = guild => {
-        client.off(Events.GUILD_CREATE, handleGuild);
+        client.off(Events.GuildCreate, handleGuild);
         client.decrementMaxListeners();
         resolve(guild);
       };
@@ -139,7 +147,7 @@ class GuildTemplate extends Base {
       };
 
       client.incrementMaxListeners();
-      client.on(Events.GUILD_CREATE, handleGuild);
+      client.on(Events.GuildCreate, handleGuild);
 
       const timeout = setTimeout(() => resolveGuild(client.guilds._add(data)), 10_000).unref();
     });
@@ -229,11 +237,5 @@ class GuildTemplate extends Base {
     return this.code;
   }
 }
-
-/**
- * Regular expression that globally matches guild template links
- * @type {RegExp}
- */
-GuildTemplate.GUILD_TEMPLATES_PATTERN = /discord(?:app)?\.(?:com\/template|new)\/([\w-]{2,255})/gi;
 
 module.exports = GuildTemplate;

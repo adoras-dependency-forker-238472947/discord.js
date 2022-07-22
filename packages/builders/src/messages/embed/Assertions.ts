@@ -1,36 +1,84 @@
-import type { APIEmbedField } from 'discord-api-types/v9';
-import { z } from 'zod';
+import { s } from '@sapphire/shapeshift';
+import type { APIEmbedField } from 'discord-api-types/v10';
+import { isValidationEnabled } from '../../util/validation';
 
-export const fieldNamePredicate = z.string().min(1).max(256);
+export const fieldNamePredicate = s.string
+	.lengthGreaterThanOrEqual(1)
+	.lengthLessThanOrEqual(256)
+	.setValidationEnabled(isValidationEnabled);
 
-export const fieldValuePredicate = z.string().min(1).max(1024);
+export const fieldValuePredicate = s.string
+	.lengthGreaterThanOrEqual(1)
+	.lengthLessThanOrEqual(1024)
+	.setValidationEnabled(isValidationEnabled);
 
-export const fieldInlinePredicate = z.boolean().optional();
+export const fieldInlinePredicate = s.boolean.optional;
 
-export const embedFieldPredicate = z.object({
-	name: fieldNamePredicate,
-	value: fieldValuePredicate,
-	inline: fieldInlinePredicate,
-});
+export const embedFieldPredicate = s
+	.object({
+		name: fieldNamePredicate,
+		value: fieldValuePredicate,
+		inline: fieldInlinePredicate,
+	})
+	.setValidationEnabled(isValidationEnabled);
 
-export const embedFieldsArrayPredicate = embedFieldPredicate.array();
+export const embedFieldsArrayPredicate = embedFieldPredicate.array.setValidationEnabled(isValidationEnabled);
 
-export const fieldLengthPredicate = z.number().lte(25);
+export const fieldLengthPredicate = s.number.lessThanOrEqual(25).setValidationEnabled(isValidationEnabled);
 
-export function validateFieldLength(fields: APIEmbedField[], amountAdding: number): void {
-	fieldLengthPredicate.parse(fields.length + amountAdding);
+export function validateFieldLength(amountAdding: number, fields?: APIEmbedField[]): void {
+	fieldLengthPredicate.parse((fields?.length ?? 0) + amountAdding);
 }
 
-export const authorNamePredicate = fieldNamePredicate.nullable();
+export const authorNamePredicate = fieldNamePredicate.nullable.setValidationEnabled(isValidationEnabled);
 
-export const urlPredicate = z.string().url().nullish();
+export const imageURLPredicate = s.string
+	.url({
+		allowedProtocols: ['http:', 'https:', 'attachment:'],
+	})
+	.nullish.setValidationEnabled(isValidationEnabled);
 
-export const colorPredicate = z.number().gte(0).lte(0xffffff).nullable();
+export const urlPredicate = s.string
+	.url({
+		allowedProtocols: ['http:', 'https:'],
+	})
+	.nullish.setValidationEnabled(isValidationEnabled);
 
-export const descriptionPredicate = z.string().min(1).max(4096).nullable();
+export const embedAuthorPredicate = s
+	.object({
+		name: authorNamePredicate,
+		iconURL: imageURLPredicate,
+		url: urlPredicate,
+	})
+	.setValidationEnabled(isValidationEnabled);
 
-export const footerTextPredicate = z.string().min(1).max(2048).nullable();
+export const RGBPredicate = s.number.int
+	.greaterThanOrEqual(0)
+	.lessThanOrEqual(255)
+	.setValidationEnabled(isValidationEnabled);
+export const colorPredicate = s.number.int
+	.greaterThanOrEqual(0)
+	.lessThanOrEqual(0xffffff)
+	.or(s.tuple([RGBPredicate, RGBPredicate, RGBPredicate]))
+	.nullable.setValidationEnabled(isValidationEnabled);
 
-export const timestampPredicate = z.union([z.number(), z.date()]).nullable();
+export const descriptionPredicate = s.string
+	.lengthGreaterThanOrEqual(1)
+	.lengthLessThanOrEqual(4096)
+	.nullable.setValidationEnabled(isValidationEnabled);
 
-export const titlePredicate = fieldNamePredicate.nullable();
+export const footerTextPredicate = s.string
+	.lengthGreaterThanOrEqual(1)
+	.lengthLessThanOrEqual(2048)
+	.nullable.setValidationEnabled(isValidationEnabled);
+
+export const embedFooterPredicate = s
+	.object({
+		text: footerTextPredicate,
+		iconURL: imageURLPredicate,
+	})
+	.setValidationEnabled(isValidationEnabled);
+
+export const timestampPredicate = s.union(s.number, s.date).nullable.setValidationEnabled(isValidationEnabled);
+
+export const titlePredicate = fieldNamePredicate.nullable.setValidationEnabled(isValidationEnabled);

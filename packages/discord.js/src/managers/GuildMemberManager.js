@@ -3,14 +3,16 @@
 const { Buffer } = require('node:buffer');
 const { setTimeout, clearTimeout } = require('node:timers');
 const { Collection } = require('@discordjs/collection');
+const { makeURLSearchParams } = require('@discordjs/rest');
 const { DiscordSnowflake } = require('@sapphire/snowflake');
-const { Routes } = require('discord-api-types/v9');
+const { Routes, GatewayOpcodes } = require('discord-api-types/v10');
 const CachedManager = require('./CachedManager');
-const { Error, TypeError, RangeError } = require('../errors');
+const { Error, TypeError, RangeError, ErrorCodes } = require('../errors');
 const BaseGuildVoiceChannel = require('../structures/BaseGuildVoiceChannel');
 const { GuildMember } = require('../structures/GuildMember');
 const { Role } = require('../structures/Role');
-const { Events, Opcodes } = require('../util/Constants');
+const Events = require('../util/Events');
+const Partials = require('../util/Partials');
 
 /**
  * Manages API methods for GuildMembers and stores their cache.
@@ -91,7 +93,7 @@ class GuildMemberManager extends CachedManager {
    */
   async add(user, options) {
     const userId = this.client.users.resolveId(user);
-    if (!userId) throw new TypeError('INVALID_TYPE', 'user', 'UserResolvable');
+    if (!userId) throw new TypeError(ErrorCodes.InvalidType, 'user', 'UserResolvable');
     if (!options.force) {
       const cachedUser = this.cache.get(userId);
       if (cachedUser) return cachedUser;
@@ -104,12 +106,19 @@ class GuildMemberManager extends CachedManager {
     };
     if (options.roles) {
       if (!Array.isArray(options.roles) && !(options.roles instanceof Collection)) {
-        throw new TypeError('INVALID_TYPE', 'options.roles', 'Array or Collection of Roles or Snowflakes', true);
+        throw new TypeError(
+          ErrorCodes.InvalidType,
+          'options.roles',
+          'Array or Collection of Roles or Snowflakes',
+          true,
+        );
       }
       const resolvedRoles = [];
       for (const role of options.roles.values()) {
         const resolvedRole = this.guild.roles.resolveId(role);
-        if (!resolvedRole) throw new TypeError('INVALID_ELEMENT', 'Array or Collection', 'options.roles', role);
+        if (!resolvedRole) {
+          throw new TypeError(ErrorCodes.InvalidElement, 'Array or Collection', 'options.roles', role);
+        }
         resolvedRoles.push(resolvedRole);
       }
       resolvedOptions.roles = resolvedRoles;
@@ -117,6 +126,20 @@ class GuildMemberManager extends CachedManager {
     const data = await this.client.rest.put(Routes.guildMember(this.guild.id, userId), { body: resolvedOptions });
     // Data is an empty buffer if the member is already part of the guild.
     return data instanceof Buffer ? (options.fetchWhenExisting === false ? null : this.fetch(userId)) : this._add(data);
+  }
+
+  /**
+   * The client user as a GuildMember of this guild
+   * @type {?GuildMember}
+   * @readonly
+   */
+  get me() {
+    return (
+      this.resolve(this.client.user.id) ??
+      (this.client.options.partials.includes(Partials.GuildMember)
+        ? this._add({ user: { id: this.client.user.id } }, true)
+        : null)
+    );
   }
 
   /**
@@ -191,10 +214,19 @@ class GuildMemberManager extends CachedManager {
   }
 
   /**
+   * Fetches the client user as a GuildMember of the guild.
+   * @param {BaseFetchOptions} [options] The options for fetching the member
+   * @returns {Promise<GuildMember>}
+   */
+  fetchMe(options) {
+    return this.fetch({ ...options, user: this.client.user.id });
+  }
+
+  /**
    * Options used for searching guild members.
    * @typedef {Object} GuildSearchMembersOptions
    * @property {string} query Filter members whose username or nickname start with this query
-   * @property {number} [limit=1] Maximum number of members to search
+   * @property {number} [limit] Maximum number of members to search
    * @property {boolean} [cache=true] Whether or not to cache the fetched member(s)
    */
 
@@ -203,9 +235,9 @@ class GuildMemberManager extends CachedManager {
    * @param {GuildSearchMembersOptions} options Options for searching members
    * @returns {Promise<Collection<Snowflake, GuildMember>>}
    */
-  async search({ query, limit = 1, cache = true } = {}) {
+  async search({ query, limit, cache = true } = {}) {
     const data = await this.client.rest.get(Routes.guildMembersSearch(this.guild.id), {
-      query: new URLSearchParams({ query, limit }),
+      query: makeURLSearchParams({ query, limit }),
     });
     return data.reduce((col, member) => col.set(member.user.id, this._add(member, cache)), new Collection());
   }
@@ -214,7 +246,7 @@ class GuildMemberManager extends CachedManager {
    * Options used for listing guild members.
    * @typedef {Object} GuildListMembersOptions
    * @property {Snowflake} [after] Limit fetching members to those with an id greater than the supplied id
-   * @property {number} [limit=1] Maximum number of members to list
+   * @property {number} [limit] Maximum number of members to list
    * @property {boolean} [cache=true] Whether or not to cache the fetched member(s)
    */
 
@@ -223,11 +255,8 @@ class GuildMemberManager extends CachedManager {
    * @param {GuildListMembersOptions} [options] Options for listing members
    * @returns {Promise<Collection<Snowflake, GuildMember>>}
    */
-  async list({ after, limit = 1, cache = true } = {}) {
-    const query = new URLSearchParams({ limit });
-    if (after) {
-      query.set('after', after);
-    }
+  async list({ after, limit, cache = true } = {}) {
+    const query = makeURLSearchParams({ limit, after });
     const data = await this.client.rest.get(Routes.guildMembers(this.guild.id), { query });
     return data.reduce((col, member) => col.set(member.user.id, this._add(member, cache)), new Collection());
   }
@@ -243,6 +272,7 @@ class GuildMemberManager extends CachedManager {
    * (if they are connected to voice), or `null` if you want to disconnect them from voice
    * @property {DateResolvable|null} [communicationDisabledUntil] The date or timestamp
    * for the member's communication to be disabled until. Provide `null` to enable communication again.
+   * @property {string} [reason] Reason for editing this user
    */
 
   /**
@@ -250,33 +280,32 @@ class GuildMemberManager extends CachedManager {
    * <info>The user must be a member of the guild</info>
    * @param {UserResolvable} user The member to edit
    * @param {GuildMemberEditData} data The data to edit the member with
-   * @param {string} [reason] Reason for editing this user
    * @returns {Promise<GuildMember>}
    */
-  async edit(user, data, reason) {
+  async edit(user, { reason, ...data }) {
     const id = this.client.users.resolveId(user);
-    if (!id) throw new TypeError('INVALID_TYPE', 'user', 'UserResolvable');
+    if (!id) throw new TypeError(ErrorCodes.InvalidType, 'user', 'UserResolvable');
 
-    // Clone the data object for immutability
-    const _data = { ...data };
-    if (_data.channel) {
-      _data.channel = this.guild.channels.resolve(_data.channel);
-      if (!(_data.channel instanceof BaseGuildVoiceChannel)) {
-        throw new Error('GUILD_VOICE_CHANNEL_RESOLVE');
+    if (data.channel) {
+      data.channel = this.guild.channels.resolve(data.channel);
+      if (!(data.channel instanceof BaseGuildVoiceChannel)) {
+        throw new Error(ErrorCodes.GuildVoiceChannelResolve);
       }
-      _data.channel_id = _data.channel.id;
-      _data.channel = undefined;
-    } else if (_data.channel === null) {
-      _data.channel_id = null;
-      _data.channel = undefined;
+      data.channel_id = data.channel.id;
+      data.channel = undefined;
+    } else if (data.channel === null) {
+      data.channel_id = null;
+      data.channel = undefined;
     }
-    _data.roles &&= _data.roles.map(role => (role instanceof Role ? role.id : role));
+    data.roles &&= data.roles.map(role => (role instanceof Role ? role.id : role));
 
-    _data.communication_disabled_until =
-      // eslint-disable-next-line eqeqeq
-      _data.communicationDisabledUntil != null
-        ? new Date(_data.communicationDisabledUntil).toISOString()
-        : _data.communicationDisabledUntil;
+    if (typeof data.communicationDisabledUntil !== 'undefined') {
+      data.communication_disabled_until =
+        // eslint-disable-next-line eqeqeq
+        data.communicationDisabledUntil != null
+          ? new Date(data.communicationDisabledUntil).toISOString()
+          : data.communicationDisabledUntil;
+    }
 
     let endpoint;
     if (id === this.client.user.id) {
@@ -286,7 +315,7 @@ class GuildMemberManager extends CachedManager {
     } else {
       endpoint = Routes.guildMember(this.guild.id, id);
     }
-    const d = await endpoint.patch({ data: _data, reason });
+    const d = await this.client.rest.patch(endpoint, { body: data, reason });
 
     const clone = this.cache.get(id)?._clone();
     clone?._patch(d);
@@ -298,9 +327,9 @@ class GuildMemberManager extends CachedManager {
    * <info>It's recommended to set {@link GuildPruneMembersOptions#count options.count}
    * to `false` for large guilds.</info>
    * @typedef {Object} GuildPruneMembersOptions
-   * @property {number} [days=7] Number of days of inactivity required to kick
+   * @property {number} [days] Number of days of inactivity required to kick
    * @property {boolean} [dry=false] Get the number of users that will be kicked, without actually kicking them
-   * @property {boolean} [count=true] Whether or not to return the number of users that have been kicked.
+   * @property {boolean} [count] Whether or not to return the number of users that have been kicked.
    * @property {RoleResolvable[]} [roles] Array of roles to bypass the "...and no roles" constraint when pruning
    * @property {string} [reason] Reason for this prune
    */
@@ -325,8 +354,8 @@ class GuildMemberManager extends CachedManager {
    *    .then(pruned => console.log(`I just pruned ${pruned} people!`))
    *    .catch(console.error);
    */
-  async prune({ days = 7, dry = false, count: compute_prune_count = true, roles = [], reason } = {}) {
-    if (typeof days !== 'number') throw new TypeError('PRUNE_DAYS_TYPE');
+  async prune({ days, dry = false, count: compute_prune_count, roles = [], reason } = {}) {
+    if (typeof days !== 'number') throw new TypeError(ErrorCodes.PruneDaysType);
 
     const query = { days };
     const resolvedRoles = [];
@@ -334,7 +363,7 @@ class GuildMemberManager extends CachedManager {
     for (const role of roles) {
       const resolvedRole = this.guild.roles.resolveId(role);
       if (!resolvedRole) {
-        throw new TypeError('INVALID_ELEMENT', 'Array', 'options.roles', role);
+        throw new TypeError(ErrorCodes.InvalidElement, 'Array', 'options.roles', role);
       }
       resolvedRoles.push(resolvedRole);
     }
@@ -346,7 +375,7 @@ class GuildMemberManager extends CachedManager {
     const endpoint = Routes.guildPrune(this.guild.id);
 
     const { pruned } = await (dry
-      ? this.client.rest.get(endpoint, { query: new URLSearchParams(query), reason })
+      ? this.client.rest.get(endpoint, { query: makeURLSearchParams(query), reason })
       : this.client.rest.post(endpoint, { body: { ...query, compute_prune_count }, reason }));
 
     return pruned;
@@ -368,7 +397,7 @@ class GuildMemberManager extends CachedManager {
    */
   async kick(user, reason) {
     const id = this.client.users.resolveId(user);
-    if (!id) return Promise.reject(new TypeError('INVALID_TYPE', 'user', 'UserResolvable'));
+    if (!id) return Promise.reject(new TypeError(ErrorCodes.InvalidType, 'user', 'UserResolvable'));
 
     await this.client.rest.delete(Routes.guildMember(this.guild.id, id), { reason });
 
@@ -389,7 +418,7 @@ class GuildMemberManager extends CachedManager {
    *   .then(banInfo => console.log(`Banned ${banInfo.user?.tag ?? banInfo.tag ?? banInfo}`))
    *   .catch(console.error);
    */
-  ban(user, options = { days: 0 }) {
+  ban(user, options) {
     return this.guild.bans.create(user, options);
   }
 
@@ -397,7 +426,7 @@ class GuildMemberManager extends CachedManager {
    * Unbans a user from the guild. Internally calls the {@link GuildBanManager#remove} method.
    * @param {UserResolvable} user The user to unban
    * @param {string} [reason] Reason for unbanning user
-   * @returns {Promise<User>} The user that was unbanned
+   * @returns {Promise<?User>} The user that was unbanned
    * @example
    * // Unban a user by id (or with a user/guild member object)
    * guild.members.unban('84484653687267328')
@@ -428,9 +457,9 @@ class GuildMemberManager extends CachedManager {
   } = {}) {
     return new Promise((resolve, reject) => {
       if (!query && !user_ids) query = '';
-      if (nonce.length > 32) throw new RangeError('MEMBER_FETCH_NONCE_LENGTH');
+      if (nonce.length > 32) throw new RangeError(ErrorCodes.MemberFetchNonceLength);
       this.guild.shard.send({
-        op: Opcodes.REQUEST_GUILD_MEMBERS,
+        op: GatewayOpcodes.RequestGuildMembers,
         d: {
           guild_id: this.guild.id,
           presences,
@@ -451,7 +480,7 @@ class GuildMemberManager extends CachedManager {
         }
         if (members.size < 1_000 || (limit && fetchedMembers.size >= limit) || i === chunk.count) {
           clearTimeout(timeout);
-          this.client.removeListener(Events.GUILD_MEMBERS_CHUNK, handler);
+          this.client.removeListener(Events.GuildMembersChunk, handler);
           this.client.decrementMaxListeners();
           let fetched = fetchedMembers;
           if (user_ids && !Array.isArray(user_ids) && fetched.size) fetched = fetched.first();
@@ -459,12 +488,12 @@ class GuildMemberManager extends CachedManager {
         }
       };
       const timeout = setTimeout(() => {
-        this.client.removeListener(Events.GUILD_MEMBERS_CHUNK, handler);
+        this.client.removeListener(Events.GuildMembersChunk, handler);
         this.client.decrementMaxListeners();
-        reject(new Error('GUILD_MEMBERS_TIMEOUT'));
+        reject(new Error(ErrorCodes.GuildMembersTimeout));
       }, time).unref();
       this.client.incrementMaxListeners();
-      this.client.on(Events.GUILD_MEMBERS_CHUNK, handler);
+      this.client.on(Events.GuildMembersChunk, handler);
     });
   }
 }

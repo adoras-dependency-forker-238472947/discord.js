@@ -1,139 +1,54 @@
-import type {
-	APIEmbed,
-	APIEmbedAuthor,
-	APIEmbedField,
-	APIEmbedFooter,
-	APIEmbedImage,
-	APIEmbedProvider,
-	APIEmbedThumbnail,
-	APIEmbedVideo,
-} from 'discord-api-types/v9';
+import type { APIEmbed, APIEmbedAuthor, APIEmbedField, APIEmbedFooter, APIEmbedImage } from 'discord-api-types/v10';
 import {
-	authorNamePredicate,
 	colorPredicate,
 	descriptionPredicate,
+	embedAuthorPredicate,
 	embedFieldsArrayPredicate,
-	fieldInlinePredicate,
-	fieldNamePredicate,
-	fieldValuePredicate,
-	footerTextPredicate,
+	embedFooterPredicate,
+	imageURLPredicate,
 	timestampPredicate,
 	titlePredicate,
 	urlPredicate,
 	validateFieldLength,
 } from './Assertions';
+import { normalizeArray, type RestOrArray } from '../../util/normalizeArray';
 
-export interface AuthorOptions {
-	name: string;
-	url?: string;
+export type RGBTuple = [red: number, green: number, blue: number];
+
+export interface IconData {
+	/**
+	 * The URL of the icon
+	 */
 	iconURL?: string;
+	/**
+	 * The proxy URL of the icon
+	 */
+	proxyIconURL?: string;
 }
 
-export interface FooterOptions {
-	text: string;
-	iconURL?: string;
-}
+export type EmbedAuthorData = Omit<APIEmbedAuthor, 'icon_url' | 'proxy_icon_url'> & IconData;
 
+export type EmbedAuthorOptions = Omit<EmbedAuthorData, 'proxyIconURL'>;
+
+export type EmbedFooterData = Omit<APIEmbedFooter, 'icon_url' | 'proxy_icon_url'> & IconData;
+
+export type EmbedFooterOptions = Omit<EmbedFooterData, 'proxyIconURL'>;
+
+export interface EmbedImageData extends Omit<APIEmbedImage, 'proxy_url'> {
+	/**
+	 * The proxy URL for the image
+	 */
+	proxyURL?: string;
+}
 /**
- * Represents an embed in a message (image/video preview, rich embed, etc.)
+ * Represents a embed in a message (image/video preview, rich embed, etc.)
  */
-export class Embed implements APIEmbed {
-	/**
-	 * An array of fields of this embed
-	 */
-	public readonly fields: APIEmbedField[];
-
-	/**
-	 * The embed title
-	 */
-	public readonly title?: string;
-
-	/**
-	 * The embed description
-	 */
-	public readonly description?: string;
-
-	/**
-	 * The embed url
-	 */
-	public readonly url?: string;
-
-	/**
-	 * The embed color
-	 */
-	public readonly color?: number;
-
-	/**
-	 * The timestamp of the embed in the ISO format
-	 */
-	public readonly timestamp?: string;
-
-	/**
-	 * The embed thumbnail data
-	 */
-	public readonly thumbnail?: APIEmbedThumbnail;
-
-	/**
-	 * The embed image data
-	 */
-	public readonly image?: APIEmbedImage;
-
-	/**
-	 * Received video data
-	 */
-	public readonly video?: APIEmbedVideo;
-
-	/**
-	 * The embed author data
-	 */
-	public readonly author?: APIEmbedAuthor;
-
-	/**
-	 * Received data about the embed provider
-	 */
-	public readonly provider?: APIEmbedProvider;
-
-	/**
-	 * The embed footer data
-	 */
-	public readonly footer?: APIEmbedFooter;
+export class EmbedBuilder {
+	public readonly data: APIEmbed;
 
 	public constructor(data: APIEmbed = {}) {
-		this.title = data.title;
-		this.description = data.description;
-		this.url = data.url;
-		this.color = data.color;
-		this.thumbnail = data.thumbnail;
-		this.image = data.image;
-		this.video = data.video;
-		this.author = data.author;
-		this.provider = data.provider;
-		this.footer = data.footer;
-		this.fields = data.fields ?? [];
-
-		if (data.timestamp) this.timestamp = new Date(data.timestamp).toISOString();
-	}
-
-	/**
-	 * The accumulated length for the embed title, description, fields, footer text, and author name
-	 */
-	public get length(): number {
-		return (
-			(this.title?.length ?? 0) +
-			(this.description?.length ?? 0) +
-			this.fields.reduce((prev, curr) => prev + curr.name.length + curr.value.length, 0) +
-			(this.footer?.text.length ?? 0) +
-			(this.author?.name.length ?? 0)
-		);
-	}
-
-	/**
-	 * Adds a field to the embed (max 25)
-	 *
-	 * @param field The field to add.
-	 */
-	public addField(field: APIEmbedField): this {
-		return this.addFields(field);
+		this.data = { ...data };
+		if (data.timestamp) this.data.timestamp = new Date(data.timestamp).toISOString();
 	}
 
 	/**
@@ -141,14 +56,16 @@ export class Embed implements APIEmbed {
 	 *
 	 * @param fields The fields to add
 	 */
-	public addFields(...fields: APIEmbedField[]): this {
+	public addFields(...fields: RestOrArray<APIEmbedField>): this {
+		fields = normalizeArray(fields);
+		// Ensure adding these fields won't exceed the 25 field limit
+		validateFieldLength(fields.length, this.data.fields);
+
 		// Data assertions
 		embedFieldsArrayPredicate.parse(fields);
 
-		// Ensure adding these fields won't exceed the 25 field limit
-		validateFieldLength(this.fields, fields.length);
-
-		this.fields.push(...Embed.normalizeFields(...fields));
+		if (this.data.fields) this.data.fields.push(...fields);
+		else this.data.fields = fields;
 		return this;
 	}
 
@@ -160,13 +77,13 @@ export class Embed implements APIEmbed {
 	 * @param fields The replacing field objects
 	 */
 	public spliceFields(index: number, deleteCount: number, ...fields: APIEmbedField[]): this {
+		// Ensure adding these fields won't exceed the 25 field limit
+		validateFieldLength(fields.length - deleteCount, this.data.fields);
+
 		// Data assertions
 		embedFieldsArrayPredicate.parse(fields);
-
-		// Ensure adding these fields won't exceed the 25 field limit
-		validateFieldLength(this.fields, fields.length - deleteCount);
-
-		this.fields.splice(index, deleteCount, ...Embed.normalizeFields(...fields));
+		if (this.data.fields) this.data.fields.splice(index, deleteCount, ...fields);
+		else this.data.fields = fields;
 		return this;
 	}
 
@@ -174,8 +91,8 @@ export class Embed implements APIEmbed {
 	 * Sets the embed's fields (max 25).
 	 * @param fields The fields to set
 	 */
-	public setFields(...fields: APIEmbedField[]) {
-		this.spliceFields(0, this.fields.length, ...fields);
+	public setFields(...fields: RestOrArray<APIEmbedField>) {
+		this.spliceFields(0, this.data.fields?.length ?? 0, ...normalizeArray(fields));
 		return this;
 	}
 
@@ -184,19 +101,17 @@ export class Embed implements APIEmbed {
 	 *
 	 * @param options The options for the author
 	 */
-	public setAuthor(options: AuthorOptions | null): this {
+
+	public setAuthor(options: EmbedAuthorOptions | null): this {
 		if (options === null) {
-			Reflect.set(this, 'author', undefined);
+			this.data.author = undefined;
 			return this;
 		}
 
-		const { name, iconURL, url } = options;
 		// Data assertions
-		authorNamePredicate.parse(name);
-		urlPredicate.parse(iconURL);
-		urlPredicate.parse(url);
+		embedAuthorPredicate.parse(options);
 
-		Reflect.set(this, 'author', { name, url, icon_url: iconURL });
+		this.data.author = { name: options.name, url: options.url, icon_url: options.iconURL };
 		return this;
 	}
 
@@ -205,11 +120,16 @@ export class Embed implements APIEmbed {
 	 *
 	 * @param color The color of the embed
 	 */
-	public setColor(color: number | null): this {
+	public setColor(color: number | RGBTuple | null): this {
 		// Data assertions
 		colorPredicate.parse(color);
 
-		Reflect.set(this, 'color', color ?? undefined);
+		if (Array.isArray(color)) {
+			const [red, green, blue] = color;
+			this.data.color = (red << 16) + (green << 8) + blue;
+			return this;
+		}
+		this.data.color = color ?? undefined;
 		return this;
 	}
 
@@ -222,7 +142,7 @@ export class Embed implements APIEmbed {
 		// Data assertions
 		descriptionPredicate.parse(description);
 
-		Reflect.set(this, 'description', description ?? undefined);
+		this.data.description = description ?? undefined;
 		return this;
 	}
 
@@ -231,18 +151,16 @@ export class Embed implements APIEmbed {
 	 *
 	 * @param options The options for the footer
 	 */
-	public setFooter(options: FooterOptions | null): this {
+	public setFooter(options: EmbedFooterOptions | null): this {
 		if (options === null) {
-			Reflect.set(this, 'footer', undefined);
+			this.data.footer = undefined;
 			return this;
 		}
 
-		const { text, iconURL } = options;
 		// Data assertions
-		footerTextPredicate.parse(text);
-		urlPredicate.parse(iconURL);
+		embedFooterPredicate.parse(options);
 
-		Reflect.set(this, 'footer', { text, icon_url: iconURL });
+		this.data.footer = { text: options.text, icon_url: options.iconURL };
 		return this;
 	}
 
@@ -253,9 +171,9 @@ export class Embed implements APIEmbed {
 	 */
 	public setImage(url: string | null): this {
 		// Data assertions
-		urlPredicate.parse(url);
+		imageURLPredicate.parse(url);
 
-		Reflect.set(this, 'image', url ? { url } : undefined);
+		this.data.image = url ? { url } : undefined;
 		return this;
 	}
 
@@ -266,9 +184,9 @@ export class Embed implements APIEmbed {
 	 */
 	public setThumbnail(url: string | null): this {
 		// Data assertions
-		urlPredicate.parse(url);
+		imageURLPredicate.parse(url);
 
-		Reflect.set(this, 'thumbnail', url ? { url } : undefined);
+		this.data.thumbnail = url ? { url } : undefined;
 		return this;
 	}
 
@@ -281,7 +199,7 @@ export class Embed implements APIEmbed {
 		// Data assertions
 		timestampPredicate.parse(timestamp);
 
-		Reflect.set(this, 'timestamp', timestamp ? new Date(timestamp).toISOString() : undefined);
+		this.data.timestamp = timestamp ? new Date(timestamp).toISOString() : undefined;
 		return this;
 	}
 
@@ -294,7 +212,7 @@ export class Embed implements APIEmbed {
 		// Data assertions
 		titlePredicate.parse(title);
 
-		Reflect.set(this, 'title', title ?? undefined);
+		this.data.title = title ?? undefined;
 		return this;
 	}
 
@@ -307,7 +225,7 @@ export class Embed implements APIEmbed {
 		// Data assertions
 		urlPredicate.parse(url);
 
-		Reflect.set(this, 'url', url ?? undefined);
+		this.data.url = url ?? undefined;
 		return this;
 	}
 
@@ -315,21 +233,6 @@ export class Embed implements APIEmbed {
 	 * Transforms the embed to a plain object
 	 */
 	public toJSON(): APIEmbed {
-		return { ...this };
-	}
-
-	/**
-	 * Normalizes field input and resolves strings
-	 *
-	 * @param fields Fields to normalize
-	 */
-	public static normalizeFields(...fields: APIEmbedField[]): APIEmbedField[] {
-		return fields.flat(Infinity).map((field) => {
-			fieldNamePredicate.parse(field.name);
-			fieldValuePredicate.parse(field.value);
-			fieldInlinePredicate.parse(field.inline);
-
-			return { name: field.name, value: field.value, inline: field.inline ?? undefined };
-		});
+		return { ...this.data };
 	}
 }

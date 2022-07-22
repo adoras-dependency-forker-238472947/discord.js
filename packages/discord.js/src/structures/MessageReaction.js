@@ -1,10 +1,10 @@
 'use strict';
 
-const { Routes } = require('discord-api-types/v9');
+const { Routes } = require('discord-api-types/v10');
 const GuildEmoji = require('./GuildEmoji');
 const ReactionEmoji = require('./ReactionEmoji');
 const ReactionUserManager = require('../managers/ReactionUserManager');
-const Util = require('../util/Util');
+const { flatten } = require('../util/Util');
 
 /**
  * Represents a reaction to a message.
@@ -50,6 +50,14 @@ class MessageReaction {
        */
       this.count ??= data.count;
     }
+  }
+
+  /**
+   * Makes the client user react with this reaction
+   * @returns {Promise<MessageReaction>}
+   */
+  react() {
+    return this.message.react(this.emoji);
   }
 
   /**
@@ -106,14 +114,14 @@ class MessageReaction {
   }
 
   toJSON() {
-    return Util.flatten(this, { emoji: 'emojiId', message: 'messageId' });
+    return flatten(this, { emoji: 'emojiId', message: 'messageId' });
   }
 
   _add(user) {
     if (this.partial) return;
     this.users.cache.set(user.id, user);
     if (!this.me || user.id !== this.message.client.user.id || this.count === 0) this.count++;
-    this.me ??= user.id === this.message.client.user.id;
+    this.me ||= user.id === this.message.client.user.id;
   }
 
   _remove(user) {

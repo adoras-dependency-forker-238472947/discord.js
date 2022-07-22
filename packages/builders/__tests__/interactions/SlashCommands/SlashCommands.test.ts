@@ -1,4 +1,5 @@
-import { APIApplicationCommandOptionChoice, ChannelType } from 'discord-api-types/v9';
+import { APIApplicationCommandOptionChoice, ChannelType, PermissionFlagsBits } from 'discord-api-types/v10';
+import { describe, test, expect } from 'vitest';
 import {
 	SlashCommandAssertions,
 	SlashCommandBooleanOption,
@@ -8,6 +9,7 @@ import {
 	SlashCommandMentionableOption,
 	SlashCommandNumberOption,
 	SlashCommandRoleOption,
+	SlashCommandAttachmentOption,
 	SlashCommandStringOption,
 	SlashCommandSubcommandBuilder,
 	SlashCommandSubcommandGroupBuilder,
@@ -25,6 +27,7 @@ const getBooleanOption = () => new SlashCommandBooleanOption().setName('owo').se
 const getUserOption = () => new SlashCommandUserOption().setName('owo').setDescription('Testing 123');
 const getChannelOption = () => new SlashCommandChannelOption().setName('owo').setDescription('Testing 123');
 const getRoleOption = () => new SlashCommandRoleOption().setName('owo').setDescription('Testing 123');
+const getAttachmentOption = () => new SlashCommandAttachmentOption().setName('owo').setDescription('Testing 123');
 const getMentionableOption = () => new SlashCommandMentionableOption().setName('owo').setDescription('Testing 123');
 const getSubcommandGroup = () => new SlashCommandSubcommandGroupBuilder().setName('owo').setDescription('Testing 123');
 const getSubcommand = () => new SlashCommandSubcommandBuilder().setName('owo').setDescription('Testing 123');
@@ -39,6 +42,8 @@ describe('Slash Commands', () => {
 	describe('Assertions tests', () => {
 		test('GIVEN valid name THEN does not throw error', () => {
 			expect(() => SlashCommandAssertions.validateName('ping')).not.toThrowError();
+			expect(() => SlashCommandAssertions.validateName('hello-world_command')).not.toThrowError();
+			expect(() => SlashCommandAssertions.validateName('aˇ㐆1٢〣²अก')).not.toThrowError();
 		});
 
 		test('GIVEN invalid name THEN throw error', () => {
@@ -48,7 +53,10 @@ describe('Slash Commands', () => {
 			expect(() => SlashCommandAssertions.validateName('')).toThrowError();
 
 			// Invalid characters used
+			expect(() => SlashCommandAssertions.validateName('ABC')).toThrowError();
 			expect(() => SlashCommandAssertions.validateName('ABC123$%^&')).toThrowError();
+			expect(() => SlashCommandAssertions.validateName('help ping')).toThrowError();
+			expect(() => SlashCommandAssertions.validateName('🦦')).toThrowError();
 
 			// Too long of a name
 			expect(() =>
@@ -85,18 +93,17 @@ describe('Slash Commands', () => {
 		test('GIVEN valid array of options or choices THEN does not throw error', () => {
 			expect(() => SlashCommandAssertions.validateMaxOptionsLength([])).not.toThrowError();
 
-			expect(() => SlashCommandAssertions.validateMaxChoicesLength([])).not.toThrowError();
+			expect(() => SlashCommandAssertions.validateChoicesLength(25)).not.toThrowError();
+			expect(() => SlashCommandAssertions.validateChoicesLength(25, [])).not.toThrowError();
 		});
 
 		test('GIVEN invalid options or choices THEN throw error', () => {
 			expect(() => SlashCommandAssertions.validateMaxOptionsLength(null)).toThrowError();
 
-			expect(() => SlashCommandAssertions.validateMaxChoicesLength(null)).toThrowError();
-
 			// Given an array that's too big
 			expect(() => SlashCommandAssertions.validateMaxOptionsLength(largeArray)).toThrowError();
 
-			expect(() => SlashCommandAssertions.validateMaxChoicesLength(largeArray)).toThrowError();
+			expect(() => SlashCommandAssertions.validateChoicesLength(1, largeArray)).toThrowError();
 		});
 
 		test('GIVEN valid required parameters THEN does not throw error', () => {
@@ -127,6 +134,7 @@ describe('Slash Commands', () => {
 					getBuilder()
 						.setName('example')
 						.setDescription('Example command')
+						.setDMPermission(false)
 						.addBooleanOption((boolean) =>
 							boolean.setName('iscool').setDescription('Are we cool or what?').setRequired(true),
 						)
@@ -138,23 +146,23 @@ describe('Slash Commands', () => {
 							integer
 								.setName('iscool')
 								.setDescription('Are we cool or what?')
-								.addChoices([['Very cool', 1_000]]),
+								.addChoices({ name: 'Very cool', value: 1_000 }),
 						)
 						.addNumberOption((number) =>
 							number
 								.setName('iscool')
 								.setDescription('Are we cool or what?')
-								.addChoices([['Very cool', 1.5]]),
+								.addChoices({ name: 'Very cool', value: 1.5 }),
 						)
 						.addStringOption((string) =>
 							string
 								.setName('iscool')
 								.setDescription('Are we cool or what?')
-								.addChoices([
-									['Fancy Pants', 'fp_1'],
-									['Fancy Shoes', 'fs_1'],
-									['The Whole shebang', 'all'],
-								]),
+								.addChoices(
+									{ name: 'Fancy Pants', value: 'fp_1' },
+									{ name: 'Fancy Shoes', value: 'fs_1' },
+									{ name: 'The Whole shebang', value: 'all' },
+								),
 						)
 						.addIntegerOption((integer) =>
 							integer.setName('iscool').setDescription('Are we cool or what?').setAutocomplete(true),
@@ -177,31 +185,25 @@ describe('Slash Commands', () => {
 			test('GIVEN a builder with both choices and autocomplete THEN does throw an error', () => {
 				expect(() =>
 					getBuilder().addStringOption(
-						// @ts-expect-error Checking if check works JS-side too
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-						getStringOption().setAutocomplete(true).addChoice('Fancy Pants', 'fp_1'),
+						getStringOption().setAutocomplete(true).addChoices({ name: 'Fancy Pants', value: 'fp_1' }),
 					),
 				).toThrowError();
 
 				expect(() =>
 					getBuilder().addStringOption(
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
 						getStringOption()
 							.setAutocomplete(true)
-							// @ts-expect-error Checking if check works JS-side too
-							.addChoices([
-								['Fancy Pants', 'fp_1'],
-								['Fancy Shoes', 'fs_1'],
-								['The Whole shebang', 'all'],
-							]),
+							.addChoices(
+								{ name: 'Fancy Pants', value: 'fp_1' },
+								{ name: 'Fancy Shoes', value: 'fs_1' },
+								{ name: 'The Whole shebang', value: 'all' },
+							),
 					),
 				).toThrowError();
 
 				expect(() =>
 					getBuilder().addStringOption(
-						// @ts-expect-error Checking if check works JS-side too
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-						getStringOption().addChoice('Fancy Pants', 'fp_1').setAutocomplete(true),
+						getStringOption().addChoices({ name: 'Fancy Pants', value: 'fp_1' }).setAutocomplete(true),
 					),
 				).toThrowError();
 
@@ -229,20 +231,20 @@ describe('Slash Commands', () => {
 
 			test('GIVEN a builder with valid channel options and channel_types THEN does not throw an error', () => {
 				expect(() =>
-					getBuilder().addChannelOption(getChannelOption().addChannelType(ChannelType.GuildText)),
+					getBuilder().addChannelOption(getChannelOption().addChannelTypes(ChannelType.GuildText)),
 				).not.toThrowError();
 
 				expect(() => {
 					getBuilder().addChannelOption(
-						getChannelOption().addChannelTypes([ChannelType.GuildNews, ChannelType.GuildText]),
+						getChannelOption().addChannelTypes(ChannelType.GuildNews, ChannelType.GuildText),
 					);
 				}).not.toThrowError();
 			});
 
 			test('GIVEN a builder with valid channel options and channel_types THEN does throw an error', () => {
-				expect(() => getBuilder().addChannelOption(getChannelOption().addChannelType(100))).toThrowError();
+				expect(() => getBuilder().addChannelOption(getChannelOption().addChannelTypes(100))).toThrowError();
 
-				expect(() => getBuilder().addChannelOption(getChannelOption().addChannelTypes([100, 200]))).toThrowError();
+				expect(() => getBuilder().addChannelOption(getChannelOption().addChannelTypes(100, 200))).toThrowError();
 			});
 
 			test('GIVEN a builder with invalid number min/max options THEN does throw an error', () => {
@@ -286,6 +288,8 @@ describe('Slash Commands', () => {
 
 				expect(() => getBuilder().addRoleOption(getRoleOption())).not.toThrowError();
 
+				expect(() => getBuilder().addAttachmentOption(getAttachmentOption())).not.toThrowError();
+
 				expect(() => getBuilder().addMentionableOption(getMentionableOption())).not.toThrowError();
 			});
 
@@ -317,8 +321,10 @@ describe('Slash Commands', () => {
 				// @ts-expect-error Checking if not providing anything, or an invalid return type causes an error
 				expect(() => getBuilder().addBooleanOption(true)).toThrowError();
 
+				// @ts-expect-error Checking if not providing anything, or an invalid return type causes an error
 				expect(() => getBuilder().addBooleanOption(null)).toThrowError();
 
+				// @ts-expect-error Checking if not providing anything, or an invalid return type causes an error
 				expect(() => getBuilder().addBooleanOption(undefined)).toThrowError();
 
 				// @ts-expect-error Checking if not providing anything, or an invalid return type causes an error
@@ -331,24 +337,24 @@ describe('Slash Commands', () => {
 				expect(() => getBuilder().setName('foo').setDescription('foo').setDefaultPermission(false)).not.toThrowError();
 			});
 
-			test('GIVEN an option that is autocompletable and has choices, THEN setting choices to an empty array should not throw an error', () => {
+			test('GIVEN an option that is autocompletable and has choices, THEN passing nothing to setChoices should not throw an error', () => {
 				expect(() =>
-					getBuilder().addStringOption(getStringOption().setAutocomplete(true).setChoices([])),
+					getBuilder().addStringOption(getStringOption().setAutocomplete(true).setChoices()),
 				).not.toThrowError();
 			});
 
 			test('GIVEN an option that is autocompletable, THEN setting choices should throw an error', () => {
 				expect(() =>
 					getBuilder().addStringOption(
-						getStringOption()
-							.setAutocomplete(true)
-							.setChoices([['owo', 'uwu']]),
+						getStringOption().setAutocomplete(true).setChoices({ name: 'owo', value: 'uwu' }),
 					),
 				).toThrowError();
 			});
 
 			test('GIVEN an option, THEN setting choices should not throw an error', () => {
-				expect(() => getBuilder().addStringOption(getStringOption().setChoices([['owo', 'uwu']]))).not.toThrowError();
+				expect(() =>
+					getBuilder().addStringOption(getStringOption().setChoices({ name: 'owo', value: 'uwu' })),
+				).not.toThrowError();
 			});
 		});
 
@@ -422,6 +428,84 @@ describe('Slash Commands', () => {
 		describe('Subcommand builder', () => {
 			test('GIVEN a valid subcommand with options THEN does not throw error', () => {
 				expect(() => getSubcommand().addBooleanOption(getBooleanOption()).toJSON()).not.toThrowError();
+			});
+		});
+
+		describe('Slash command localizations', () => {
+			const expectedSingleLocale = { 'en-US': 'foobar' };
+			const expectedMultipleLocales = {
+				...expectedSingleLocale,
+				bg: 'test',
+			};
+
+			test('GIVEN valid name localizations THEN does not throw error', () => {
+				expect(() => getBuilder().setNameLocalization('en-US', 'foobar')).not.toThrowError();
+				expect(() => getBuilder().setNameLocalizations({ 'en-US': 'foobar' })).not.toThrowError();
+			});
+
+			test('GIVEN invalid name localizations THEN does throw error', () => {
+				// @ts-expect-error
+				expect(() => getBuilder().setNameLocalization('en-U', 'foobar')).toThrowError();
+				// @ts-expect-error
+				expect(() => getBuilder().setNameLocalizations({ 'en-U': 'foobar' })).toThrowError();
+			});
+
+			test('GIVEN valid name localizations THEN valid data is stored', () => {
+				expect(getBuilder().setNameLocalization('en-US', 'foobar').name_localizations).toEqual(expectedSingleLocale);
+				expect(getBuilder().setNameLocalizations({ 'en-US': 'foobar', bg: 'test' }).name_localizations).toEqual(
+					expectedMultipleLocales,
+				);
+				expect(getBuilder().setNameLocalizations(null).name_localizations).toBeNull();
+				expect(getBuilder().setNameLocalization('en-US', null).name_localizations).toEqual({
+					'en-US': null,
+				});
+			});
+
+			test('GIVEN valid description localizations THEN does not throw error', () => {
+				expect(() => getBuilder().setDescriptionLocalization('en-US', 'foobar')).not.toThrowError();
+				expect(() => getBuilder().setDescriptionLocalizations({ 'en-US': 'foobar' })).not.toThrowError();
+			});
+
+			test('GIVEN invalid description localizations THEN does throw error', () => {
+				// @ts-expect-error
+				expect(() => getBuilder().setDescriptionLocalization('en-U', 'foobar')).toThrowError();
+				// @ts-expect-error
+				expect(() => getBuilder().setDescriptionLocalizations({ 'en-U': 'foobar' })).toThrowError();
+			});
+
+			test('GIVEN valid description localizations THEN valid data is stored', () => {
+				expect(getBuilder().setDescriptionLocalization('en-US', 'foobar').description_localizations).toEqual(
+					expectedSingleLocale,
+				);
+				expect(
+					getBuilder().setDescriptionLocalizations({ 'en-US': 'foobar', bg: 'test' }).description_localizations,
+				).toEqual(expectedMultipleLocales);
+				expect(getBuilder().setDescriptionLocalizations(null).description_localizations).toBeNull();
+				expect(getBuilder().setDescriptionLocalization('en-US', null).description_localizations).toEqual({
+					'en-US': null,
+				});
+			});
+		});
+
+		describe('permissions', () => {
+			test('GIVEN valid permission string THEN does not throw error', () => {
+				expect(() => getBuilder().setDefaultMemberPermissions('1')).not.toThrowError();
+			});
+
+			test('GIVEN valid permission bitfield THEN does not throw error', () => {
+				expect(() =>
+					getBuilder().setDefaultMemberPermissions(PermissionFlagsBits.AddReactions | PermissionFlagsBits.AttachFiles),
+				).not.toThrowError();
+			});
+
+			test('GIVEN null permissions THEN does not throw error', () => {
+				expect(() => getBuilder().setDefaultMemberPermissions(null)).not.toThrowError();
+			});
+
+			test('GIVEN invalid inputs THEN does throw error', () => {
+				expect(() => getBuilder().setDefaultMemberPermissions('1.1')).toThrowError();
+
+				expect(() => getBuilder().setDefaultMemberPermissions(1.1)).toThrowError();
 			});
 		});
 	});

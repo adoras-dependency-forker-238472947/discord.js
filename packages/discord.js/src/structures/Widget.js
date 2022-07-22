@@ -1,12 +1,13 @@
 'use strict';
 
 const { Collection } = require('@discordjs/collection');
-const { Routes } = require('discord-api-types/v9');
+const { Routes } = require('discord-api-types/v10');
 const Base = require('./Base');
 const WidgetMember = require('./WidgetMember');
 
 /**
  * Represents a Widget.
+ * @extends {Base}
  */
 class Widget extends Base {
   constructor(client, data) {

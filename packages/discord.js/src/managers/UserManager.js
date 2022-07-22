@@ -1,7 +1,8 @@
 'use strict';
 
-const { ChannelType, Routes } = require('discord-api-types/v9');
+const { ChannelType, Routes } = require('discord-api-types/v10');
 const CachedManager = require('./CachedManager');
+const { ErrorCodes } = require('../errors');
 const { GuildMember } = require('../structures/GuildMember');
 const { Message } = require('../structures/Message');
 const ThreadMember = require('../structures/ThreadMember');
@@ -39,7 +40,7 @@ class UserManager extends CachedManager {
    * @private
    */
   dmChannel(userId) {
-    return this.client.channels.cache.find(c => c.type === ChannelType.DM && c.recipient.id === userId) ?? null;
+    return this.client.channels.cache.find(c => c.type === ChannelType.DM && c.recipientId === userId) ?? null;
   }
 
   /**
@@ -68,7 +69,7 @@ class UserManager extends CachedManager {
   async deleteDM(user) {
     const id = this.resolveId(user);
     const dmChannel = this.dmChannel(id);
-    if (!dmChannel) throw new Error('USER_NO_DM_CHANNEL');
+    if (!dmChannel) throw new Error(ErrorCodes.UserNoDMChannel);
     await this.client.rest.delete(Routes.channel(dmChannel.id));
     this.client.channels._remove(dmChannel.id);
     return dmChannel;
@@ -95,7 +96,7 @@ class UserManager extends CachedManager {
    * Fetches a user's flags.
    * @param {UserResolvable} user The UserResolvable to identify
    * @param {BaseFetchOptions} [options] Additional options for this fetch
-   * @returns {Promise<UserFlags>}
+   * @returns {Promise<UserFlagsBitField>}
    */
   async fetchFlags(user, options) {
     return (await this.fetch(user, options)).flags;

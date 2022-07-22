@@ -1,25 +1,24 @@
-import { TypedEmitter } from 'tiny-typed-emitter';
-import type { Awaited } from '../util/util';
+/* eslint-disable @typescript-eslint/method-signature-style, @typescript-eslint/unified-signatures */
+import { EventEmitter } from 'node:events';
 
-/**
- * The events that a SpeakingMap can emit.
- */
-export interface SpeakingMapEvents {
+export interface SpeakingMap extends EventEmitter {
 	/**
 	 * Emitted when a user starts speaking.
+	 * @event
 	 */
-	start: (userId: string) => Awaited<void>;
+	on(event: 'start', listener: (userId: string) => void): this;
 
 	/**
-	 * Emitted when a user stops speaking.
+	 * Emitted when a user ends speaking.
+	 * @event
 	 */
-	end: (userId: string) => Awaited<void>;
+	on(event: 'end', listener: (userId: string) => void): this;
 }
 
 /**
  * Tracks the speaking states of users in a voice channel.
  */
-export class SpeakingMap extends TypedEmitter<SpeakingMapEvents> {
+export class SpeakingMap extends EventEmitter {
 	/**
 	 * The delay after a packet is received from a user until they're marked as not speaking anymore.
 	 */

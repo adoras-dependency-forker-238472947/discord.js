@@ -1,11 +1,10 @@
 'use strict';
 
 const { DiscordSnowflake } = require('@sapphire/snowflake');
-const { Routes } = require('discord-api-types/v9');
+const { PermissionFlagsBits } = require('discord-api-types/v10');
 const Base = require('./Base');
-const { Error } = require('../errors');
-const Permissions = require('../util/Permissions');
-const Util = require('../util/Util');
+const { Error, ErrorCodes } = require('../errors');
+const PermissionsBitField = require('../util/PermissionsBitField');
 
 /**
  * Represents a role on Discord.
@@ -77,9 +76,9 @@ class Role extends Base {
     if ('permissions' in data) {
       /**
        * The permissions of the role
-       * @type {Readonly<Permissions>}
+       * @type {Readonly<PermissionsBitField>}
        */
-      this.permissions = new Permissions(BigInt(data.permissions)).freeze();
+      this.permissions = new PermissionsBitField(BigInt(data.permissions)).freeze();
     }
 
     if ('managed' in data) {
@@ -167,7 +166,7 @@ class Role extends Base {
   get editable() {
     if (this.managed) return false;
     const clientMember = this.guild.members.resolve(this.client.user);
-    if (!clientMember.permissions.has(Permissions.FLAGS.MANAGE_ROLES)) return false;
+    if (!clientMember.permissions.has(PermissionFlagsBits.ManageRoles)) return false;
     return clientMember.roles.highest.comparePositionTo(this) > 0;
   }
 
@@ -208,8 +207,7 @@ class Role extends Base {
 
   /**
    * Edits the role.
-   * @param {RoleData} data The new data for the role
-   * @param {string} [reason] Reason for editing this role
+   * @param {EditRoleOptions} data The new data for the role
    * @returns {Promise<Role>}
    * @example
    * // Edit a role
@@ -217,8 +215,8 @@ class Role extends Base {
    *   .then(updated => console.log(`Edited role name to ${updated.name}`))
    *   .catch(console.error);
    */
-  edit(data, reason) {
-    return this.guild.roles.edit(this, data, reason);
+  edit(data) {
+    return this.guild.roles.edit(this, data);
   }
 
   /**
@@ -226,11 +224,11 @@ class Role extends Base {
    * taking into account permission overwrites.
    * @param {GuildChannel|Snowflake} channel The guild channel to use as context
    * @param {boolean} [checkAdmin=true] Whether having `ADMINISTRATOR` will return all permissions
-   * @returns {Readonly<Permissions>}
+   * @returns {Readonly<PermissionsBitField>}
    */
   permissionsIn(channel, checkAdmin = true) {
     channel = this.guild.channels.resolve(channel);
-    if (!channel) throw new Error('GUILD_CHANNEL_RESOLVE');
+    if (!channel) throw new Error(ErrorCodes.GuildChannelResolve);
     return channel.rolePermissions(this, checkAdmin);
   }
 
@@ -246,7 +244,7 @@ class Role extends Base {
    *   .catch(console.error);
    */
   setName(name, reason) {
-    return this.edit({ name }, reason);
+    return this.edit({ name, reason });
   }
 
   /**
@@ -261,7 +259,7 @@ class Role extends Base {
    *   .catch(console.error);
    */
   setColor(color, reason) {
-    return this.edit({ color }, reason);
+    return this.edit({ color, reason });
   }
 
   /**
@@ -276,7 +274,7 @@ class Role extends Base {
    *   .catch(console.error);
    */
   setHoist(hoist = true, reason) {
-    return this.edit({ hoist }, reason);
+    return this.edit({ hoist, reason });
   }
 
   /**
@@ -286,7 +284,7 @@ class Role extends Base {
    * @returns {Promise<Role>}
    * @example
    * // Set the permissions of the role
-   * role.setPermissions([Permissions.FLAGS.KICK_MEMBERS, Permissions.FLAGS.BAN_MEMBERS])
+   * role.setPermissions([PermissionFlagsBits.KickMembers, PermissionFlagsBits.BanMembers])
    *   .then(updated => console.log(`Updated permissions to ${updated.permissions.bitfield}`))
    *   .catch(console.error);
    * @example
@@ -296,7 +294,7 @@ class Role extends Base {
    *   .catch(console.error);
    */
   setPermissions(permissions, reason) {
-    return this.edit({ permissions }, reason);
+    return this.edit({ permissions, reason });
   }
 
   /**
@@ -311,7 +309,7 @@ class Role extends Base {
    *   .catch(console.error);
    */
   setMentionable(mentionable = true, reason) {
-    return this.edit({ mentionable }, reason);
+    return this.edit({ mentionable, reason });
   }
 
   /**
@@ -323,7 +321,7 @@ class Role extends Base {
    * @returns {Promise<Role>}
    */
   setIcon(icon, reason) {
-    return this.edit({ icon }, reason);
+    return this.edit({ icon, reason });
   }
 
   /**
@@ -338,7 +336,7 @@ class Role extends Base {
    *   .catch(console.error);
    */
   setUnicodeEmoji(unicodeEmoji, reason) {
-    return this.edit({ unicodeEmoji }, reason);
+    return this.edit({ unicodeEmoji, reason });
   }
 
   /**
@@ -359,21 +357,8 @@ class Role extends Base {
    *   .then(updated => console.log(`Role position: ${updated.position}`))
    *   .catch(console.error);
    */
-  async setPosition(position, { relative, reason } = {}) {
-    const updatedRoles = await Util.setPosition(
-      this,
-      position,
-      relative,
-      this.guild._sortedRoles(),
-      this.client,
-      Routes.guildRoles(this.guild.id),
-      reason,
-    );
-    this.client.actions.GuildRolesPositionUpdate.handle({
-      guild_id: this.guild.id,
-      roles: updatedRoles,
-    });
-    return this;
+  setPosition(position, options = {}) {
+    return this.guild.roles.setPosition(this, position, options);
   }
 
   /**

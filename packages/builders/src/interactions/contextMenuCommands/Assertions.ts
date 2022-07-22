@@ -1,16 +1,17 @@
-import { z } from 'zod';
-import { ApplicationCommandType } from 'discord-api-types/v9';
+import { s } from '@sapphire/shapeshift';
+import { ApplicationCommandType } from 'discord-api-types/v10';
 import type { ContextMenuCommandType } from './ContextMenuCommandBuilder';
+import { isValidationEnabled } from '../../util/validation';
 
-const namePredicate = z
-	.string()
-	.min(1)
-	.max(32)
-	.regex(/^( *[\p{L}\p{N}_-]+ *)+$/u);
-
-const typePredicate = z.union([z.literal(ApplicationCommandType.User), z.literal(ApplicationCommandType.Message)]);
-
-const booleanPredicate = z.boolean();
+const namePredicate = s.string
+	.lengthGreaterThanOrEqual(1)
+	.lengthLessThanOrEqual(32)
+	.regex(/^( *[\p{L}\p{N}\p{sc=Devanagari}\p{sc=Thai}_-]+ *)+$/u)
+	.setValidationEnabled(isValidationEnabled);
+const typePredicate = s
+	.union(s.literal(ApplicationCommandType.User), s.literal(ApplicationCommandType.Message))
+	.setValidationEnabled(isValidationEnabled);
+const booleanPredicate = s.boolean;
 
 export function validateDefaultPermission(value: unknown): asserts value is boolean {
 	booleanPredicate.parse(value);
@@ -30,4 +31,20 @@ export function validateRequiredParameters(name: string, type: number) {
 
 	// Assert type is valid
 	validateType(type);
+}
+
+const dmPermissionPredicate = s.boolean.nullish;
+
+export function validateDMPermission(value: unknown): asserts value is boolean | null | undefined {
+	dmPermissionPredicate.parse(value);
+}
+
+const memberPermissionPredicate = s.union(
+	s.bigint.transform((value) => value.toString()),
+	s.number.safeInt.transform((value) => value.toString()),
+	s.string.regex(/^\d+$/),
+).nullish;
+
+export function validateDefaultMemberPermissions(permissions: unknown) {
+	return memberPermissionPredicate.parse(permissions);
 }

@@ -2,7 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
-# [0.5.0](https://github.com/discordjs/discord.js/compare/@discordjs/collection@0.4.0...@discordjs/collection@0.5.0) (2021-12-08)
+# [@discordjs/collection@1.0.0](https://github.com/discordjs/discord.js/compare/@discordjs/collection@0.8.0...@discordjs/collection@1.0.0) - (2022-07-17)
+
+## Info
+
+- 1.0.0 release bump, no new features.
+
+# [@discordjs/collection@0.8.0](https://github.com/discordjs/discord.js/compare/@discordjs/collection@0.7.0...@discordjs/collection@0.8.0) - (2022-07-17)
+
+## Bug Fixes
+
+- **Collection:** Make error messages consistent (#8224) ([5bd6b28](https://github.com/discordjs/discord.js/commit/5bd6b28b3ebfced1cb9d23e83bd7c0def7a12404))
+- Check for function type (#8064) ([3bb9c0e](https://github.com/discordjs/discord.js/commit/3bb9c0e5c37311044ff41761b572ac4f91cda57c))
+
+## Documentation
+
+- Add codecov coverage badge to readmes (#8226) ([f6db285](https://github.com/discordjs/discord.js/commit/f6db285c073898a749fe4591cbd4463d1896daf5))
+
+## Features
+
+- Codecov (#8219) ([f10f4cd](https://github.com/discordjs/discord.js/commit/f10f4cdcd88ca6be7ec735ed3a415ba13da83db0))
+- **docgen:** Update typedoc ([b3346f4](https://github.com/discordjs/discord.js/commit/b3346f4b9b3d4f96443506643d4631dc1c6d7b21))
+- Website (#8043) ([127931d](https://github.com/discordjs/discord.js/commit/127931d1df7a2a5c27923c2f2151dbf3824e50cc))
+- **docgen:** Typescript support ([3279b40](https://github.com/discordjs/discord.js/commit/3279b40912e6aa61507bedb7db15a2b8668de44b))
+- Docgen package (#8029) ([8b979c0](https://github.com/discordjs/discord.js/commit/8b979c0245c42fd824d8e98745ee869f5360fc86))
+- Use vitest instead of jest for more speed ([8d8e6c0](https://github.com/discordjs/discord.js/commit/8d8e6c03decd7352a2aa180f6e5bc1a13602539b))
+- Add scripts package for locally used scripts ([f2ae1f9](https://github.com/discordjs/discord.js/commit/f2ae1f9348bfd893332a9060f71a8a5f272a1b8b))
+
+## Refactor
+
+- **collection:** Remove `default` property (#8055) ([c8f1690](https://github.com/discordjs/discord.js/commit/c8f1690896f55f06e05a83704262783cfc2bb91d))
+- **collection:** Remove default export (#8053) ([16810f3](https://github.com/discordjs/discord.js/commit/16810f3e410bf35ed7e6e7412d517ea74c792c5d))
+- Move all the config files to root (#8033) ([769ea0b](https://github.com/discordjs/discord.js/commit/769ea0bfe78c4f1d413c6b397c604ffe91e39c6a))
+
+## Testing
+
+- **collection:** Improve coverage (#8222) ([a51f721](https://github.com/discordjs/discord.js/commit/a51f7215eca67a0f46fba8b2d706f7ec6f6dc228))
+
+# [@discordjs/collection@0.7.0](https://github.com/discordjs/discord.js/compare/@discordjs/collection@0.6.0...@discordjs/collection@0.7.0) - (2022-06-04)
+
+## Styling
+
+- Cleanup tests and tsup configs ([6b8ef20](https://github.com/discordjs/discord.js/commit/6b8ef20cb3af5b5cfd176dd0aa0a1a1e98551629))
+
+# [@discordjs/collection@0.6.0](https://github.com/discordjs/discord.js/compare/@discordjs/collection@0.5.0...@discordjs/collection@0.6.0) - (2022-04-17)
+
+## Features
+
+- Add support for module: NodeNext in TS and ESM (#7598) ([8f1986a](https://github.com/discordjs/discord.js/commit/8f1986a6aa98365e09b00e84ad5f9f354ab61f3d))
+- **builders:** Add attachment command option type (#7203) ([ae0f35f](https://github.com/discordjs/discord.js/commit/ae0f35f51d68dfa5a7dc43d161ef9365171debdb))
+- **Collection:** Add merging functions (#7299) ([e4bd07b](https://github.com/discordjs/discord.js/commit/e4bd07b2394f227ea06b72eb6999de9ab3127b25))
+
+# [@discordjs/collection@0.5.0](https://github.com/discordjs/discord.js/compare/@discordjs/collection@0.4.0...@discordjs/collection@0.5.0) - (2022-01-24)
 
 ## Refactor
 
